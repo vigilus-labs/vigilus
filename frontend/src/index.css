@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Vigilus palette — adopted from vigilus.dev (warm bronze/gold + cream).
+ * Values are "R G B" triplets so Tailwind's rgb(var() / <alpha-value>) opacity
+ * modifiers work. Light is the default; .dark overrides.
+ */
+:root {
+  --color-accent: 139 105 20;          /* #8B6914 */
+  --color-accent-hover: 164 123 26;    /* #A47B1A */
+  --color-accent-active: 109 82 15;    /* #6D520F */
+  --color-bg: 250 246 240;             /* #FAF6F0 */
+  --color-surface: 242 235 225;        /* #F2EBE1 */
+  --color-border: 221 211 196;         /* #DDD3C4 */
+  --color-text-primary: 45 48 50;      /* #2D3032 */
+  --color-text-secondary: 107 101 96;  /* #6B6560 */
+  --color-success: 22 163 74;          /* #16A34A */
+  --color-warning: 202 138 4;          /* #CA8A04 */
+  --color-danger: 220 38 38;           /* #DC2626 */
+  --color-info: 37 99 235;             /* #2563EB */
+
+  /* Chart series palette (Scope graphs). Overridden in .dark below. */
+  --chart-1: 139 105 20;               /* accent gold */
+  --chart-2: 22 163 74;                /* success green */
+  --chart-3: 202 138 4;                /* warning amber */
+  --chart-4: 220 38 38;                /* danger red */
+  --chart-5: 37 99 235;                /* info blue */
+  --chart-6: 124 58 237;               /* violet */
+}
+
+.dark {
+  --color-accent: 196 154 98;          /* #C49A62 */
+  --color-accent-hover: 212 170 114;   /* #D4AA72 */
+  --color-accent-active: 160 120 64;   /* #A07840 */
+  --color-bg: 26 28 29;                /* #1A1C1D */
+  --color-surface: 38 41 41;           /* #262929 */
+  --color-border: 61 64 66;            /* #3D4042 */
+  --color-text-primary: 232 220 200;   /* #E8DCC8 */
+  --color-text-secondary: 168 158 144; /* #A89E90 */
+
+  /* Chart series palette — brightened for dark backgrounds. */
+  --chart-1: 196 154 98;               /* accent gold */
+  --chart-2: 34 197 94;                /* green */
+  --chart-3: 234 179 8;                /* amber */
+  --chart-4: 248 113 113;              /* red */
+  --chart-5: 96 165 250;               /* blue */
+  --chart-6: 167 139 250;              /* violet */
+}
+
+@layer base {
+  body {
+    @apply font-sans text-text-primary bg-bg antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  /* Focus ring */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-accent/30 ring-offset-1;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-accent rounded hover:bg-accent-hover active:bg-accent-active transition-colors disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-text-primary bg-bg border border-border rounded hover:bg-surface active:bg-border transition-colors disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 text-sm bg-bg text-text-primary border border-border rounded placeholder:text-text-secondary/60 focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border));
+  border-radius: 3px;
+}
