@@ -37,6 +37,12 @@ class ScopeHostNode(BaseModel):
     finding_count: int = 0
     open_port_count: int = 0
     monitored: bool = False           # has wazuh-sourced findings
+    segment: str | None = None        # computed subnet CIDR, e.g. "10.0.0.0/24"
+    is_gateway: bool = False
+    is_dns: bool = False
+    is_switch: bool = False
+    is_access_point: bool = False
+    role_label: str | None = None
 
 
 class ScopeTimeseriesPoint(BaseModel):
@@ -129,8 +135,65 @@ class ScopeDeleteRequest(BaseModel):
     ips: list[str]
 
 
+class ScopeNetworkRole(BaseModel):
+    """A host's manually-tagged network role (gateway/DNS/switch/AP)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    ip: str
+    is_gateway: bool = False
+    is_dns: bool = False
+    is_switch: bool = False
+    is_access_point: bool = False
+    label: str | None = None
+    notes: str | None = None
+
+
+class ScopeNetworkRoleUpdate(BaseModel):
+    """Upsert body for a host's network role."""
+
+    ip: str
+    is_gateway: bool = False
+    is_dns: bool = False
+    is_switch: bool = False
+    is_access_point: bool = False
+    label: str | None = None
+    notes: str | None = None
+
+
+class ScopeSegment(BaseModel):
+    """A manual label/color override for a computed subnet grouping."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    cidr: str
+    label: str | None = None
+    color: str | None = None
+
+
+class ScopeSegmentUpdate(BaseModel):
+    """Upsert body for a segment's cosmetic override."""
+
+    cidr: str
+    label: str | None = None
+    color: str | None = None
+
+
 class ScopeDeleteResult(BaseModel):
     deleted_ips: list[str]
     deleted_hosts: int
     deleted_services: int
     deleted_findings: int
+
+
+class ScopePromoteRequest(BaseModel):
+    """Body for promoting discovered hosts into the managed Server inventory."""
+
+    ips: list[str]
+    credential_id: str | None = None
+
+
+class ScopePromoteResult(BaseModel):
+    created: list[str]            # IPs a new Server row was created for
+    already_managed: list[str]    # IPs that already had a matching Server
+    invalid: list[str]            # IPs that didn't parse and were skipped

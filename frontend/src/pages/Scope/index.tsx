@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Network, ShieldCheck, Radar, AlertTriangle, Wifi, Table2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useToast } from '@/components/Notifications';
 import type {
   ScopeOverview,
   ScopeHostNode,
@@ -8,11 +9,13 @@ import type {
   ScopeSeverityBucket,
   ScopePortBucket,
   ScopeInventoryHost,
+  ScopeSegment,
 } from '@/types';
 import { cn } from '@/lib/utils';
 import { TopologyGraph } from './TopologyGraph';
 import { InventoryTable } from './InventoryTable';
 import { NodeDetail } from './NodeDetail';
+import { SegmentEditor } from './SegmentEditor';
 import { AlertsOverTime } from './charts/AlertsOverTime';
 import { SeverityDonut } from './charts/SeverityDonut';
 import { PortsDistribution } from './charts/PortsDistribution';
@@ -70,6 +73,7 @@ function TabButton({
 }
 
 export default function Scope() {
+  const toast = useToast();
   const [overview, setOverview] = useState<ScopeOverview | null>(null);
   const [hosts, setHosts] = useState<ScopeHostNode[]>([]);
   const [timeseries, setTimeseries] = useState<ScopeTimeseriesPoint[]>([]);
@@ -81,6 +85,8 @@ export default function Scope() {
   const [inventory, setInventory] = useState<ScopeInventoryHost[]>([]);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [inventoryLoaded, setInventoryLoaded] = useState(false);
+  const [segments, setSegments] = useState<ScopeSegment[]>([]);
+  const [editingCidr, setEditingCidr] = useState<string | null>(null);
 
   const loadInventory = useCallback(() => {
     setInventoryLoading(true);
@@ -100,13 +106,15 @@ export default function Scope() {
       api.scopeFindingsTimeseries(30),
       api.scopeFindingsSeverity(),
       api.scopePortsDistribution(),
+      api.scopeSegments(),
     ])
-      .then(([o, h, ts, sev, p]) => {
+      .then(([o, h, ts, sev, p, segs]) => {
         setOverview(o);
         setHosts(h);
         setTimeseries(ts);
         setSeverity(sev);
         setPorts(p);
+        setSegments(segs);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -129,6 +137,35 @@ export default function Scope() {
     api.scopeFindingsSeverity().then(setSeverity);
     api.scopePortsDistribution().then(setPorts);
   }, [loadInventory]);
+
+  // After a role/segment edit: refresh the topology hosts (role flags +
+  // segment overrides drive the diagram) without touching other tabs.
+  const handleRoleOrSegmentChanged = useCallback(() => {
+    api.scopeHosts().then(setHosts);
+    api.scopeSegments().then(setSegments);
+  }, []);
+
+  // "+" button on an unmanaged topology node: promote that single host.
+  const handlePromote = useCallback(
+    async (ip: string) => {
+      try {
+        const res = await api.scopePromoteHosts([ip]);
+        if (res.created.length) {
+          toast(`Added ${ip} to Server Inventory`, 'success');
+        } else if (res.already_managed.length) {
+          toast(`${ip} is already managed`, 'info');
+        } else {
+          toast(`Couldn't add ${ip}`, 'error');
+        }
+        handleDeleted();
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'Add to inventory failed', 'error');
+      }
+    },
+    [toast, handleDeleted],
+  );
+
+  const selectedHost = hosts.find((h) => h.id === selectedId) ?? undefined;
 
   return (
     <div className="h-full flex flex-col">
@@ -179,7 +216,14 @@ export default function Scope() {
                 loading ? (
                   <div className="h-full flex items-center justify-center text-text-secondary text-sm">Loading scope…</div>
                 ) : (
-                  <TopologyGraph hosts={hosts} selectedId={selectedId} onSelect={setSelectedId} />
+                  <TopologyGraph
+                    hosts={hosts}
+                    segments={segments}
+                    selectedId={selectedId}
+                    onSelect={setSelectedId}
+                    onSegmentEdit={(cidr) => setEditingCidr(cidr)}
+                    onPromote={handlePromote}
+                  />
                 )
               ) : (
                 <InventoryTable
@@ -187,6 +231,7 @@ export default function Scope() {
                   loading={inventoryLoading}
                   onSelect={setSelectedId}
                   onDeleted={handleDeleted}
+                  onPromoted={handleDeleted}
                 />
               )}
             </div>
@@ -203,9 +248,24 @@ export default function Scope() {
 
         {/* Detail side panel */}
         {selectedId && (
-          <NodeDetail identity={selectedId} onClose={() => setSelectedId(null)} />
+          <NodeDetail
+            identity={selectedId}
+            hostNode={selectedHost}
+            onClose={() => setSelectedId(null)}
+            onRoleChanged={handleRoleOrSegmentChanged}
+          />
         )}
       </div>
+
+      {/* Segment label/color editor */}
+      {editingCidr && (
+        <SegmentEditor
+          cidr={editingCidr}
+          initial={segments.find((s) => s.cidr === editingCidr)}
+          onClose={() => setEditingCidr(null)}
+          onSaved={handleRoleOrSegmentChanged}
+        />
+      )}
     </div>
   );
 }

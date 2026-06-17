@@ -118,6 +118,7 @@ export interface Server {
   tags: string[];
   credential_id: string | null;
   notes: string | null;
+  ip: string | null;
   status: ServerStatus;
   last_seen: string | null;
   created_at: string;
@@ -567,6 +568,12 @@ export interface ScopeHostNode {
   finding_count: number;
   open_port_count: number;
   monitored: boolean;
+  segment: string | null;
+  is_gateway: boolean;
+  is_dns: boolean;
+  is_switch: boolean;
+  is_access_point: boolean;
+  role_label: string | null;
 }
 
 export interface ScopeTimeseriesPoint {
@@ -640,4 +647,42 @@ export interface ScopeDeleteResult {
   deleted_hosts: number;
   deleted_services: number;
   deleted_findings: number;
+}
+
+export interface ScopePromoteResult {
+  created: string[];
+  already_managed: string[];
+  invalid: string[];
+}
+
+export interface ScopeNetworkRole {
+  ip: string;
+  is_gateway: boolean;
+  is_dns: boolean;
+  is_switch: boolean;
+  is_access_point: boolean;
+  label: string | null;
+  notes: string | null;
+}
+
+export interface ScopeNetworkRoleUpdate {
+  ip: string;
+  is_gateway: boolean;
+  is_dns: boolean;
+  is_switch: boolean;
+  is_access_point: boolean;
+  label?: string | null;
+  notes?: string | null;
+}
+
+export interface ScopeSegment {
+  cidr: string;
+  label: string | null;
+  color: string | null;
+}
+
+export interface ScopeSegmentUpdate {
+  cidr: string;
+  label?: string | null;
+  color?: string | null;
 }

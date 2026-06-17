@@ -8,13 +8,16 @@ deleting discovered hosts by IP.
 from __future__ import annotations
 
 import datetime as _dt
+import ipaddress
+import re
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete as sa_delete, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import func, or_, select
+from sqlalchemy import update as sa_update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from vigilus.db.base import get_db
 from vigilus.db.models import (
@@ -22,6 +25,8 @@ from vigilus.db.models import (
     DiscoveredHost,
     DiscoveredService,
     Finding,
+    NetworkRole,
+    NetworkSegment,
     Scan,
     Server,
 )
@@ -32,9 +37,15 @@ from vigilus.schemas.scope import (
     ScopeHostDetail,
     ScopeHostNode,
     ScopeInventoryHost,
+    ScopeNetworkRole,
+    ScopeNetworkRoleUpdate,
     ScopeOverview,
     ScopePort,
     ScopePortBucket,
+    ScopePromoteRequest,
+    ScopePromoteResult,
+    ScopeSegment,
+    ScopeSegmentUpdate,
     ScopeSeverityBucket,
     ScopeTimeseriesPoint,
 )
@@ -44,6 +55,41 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/scope", tags=["Scope"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
+
+
+def _compute_segment(ip: str, scan_target: str | None) -> str | None:
+    """Best-effort subnet key for an IP: the scan's CIDR if the IP falls
+    inside it, otherwise the IP's own subnet (/24 for IPv4, /64 for IPv6).
+    Returns None for unparsable IPs."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return None
+    if scan_target:
+        try:
+            net = ipaddress.ip_network(scan_target, strict=False)
+            if addr in net:
+                return str(net)
+        except ValueError:
+            pass
+    prefix = 24 if addr.version == 4 else 64
+    return str(ipaddress.ip_network(f"{ip}/{prefix}", strict=False))
+
+
+# Hex color (3 or 6 digits) — matches what <input type="color"> emits and the
+# stored-override format. Constrained before persisting because the value is
+# interpolated into CSS on the client (validate/constrain untrusted input).
+_HEX_COLOR = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
+
+
+def _validate_label(label: str | None, field: str = "label") -> None:
+    if label is not None and len(label) > 255:
+        raise HTTPException(status_code=400, detail=f"{field} too long (max 255)")
+
+
+def _validate_color(color: str | None) -> None:
+    if color is not None and (len(color) > 32 or not _HEX_COLOR.match(color)):
+        raise HTTPException(status_code=400, detail="color must be a hex string like '#7c3aed'")
 
 
 @router.get("/overview", response_model=ScopeOverview)
@@ -84,11 +130,18 @@ async def hosts(db: SessionDep) -> list[ScopeHostNode]:
         await db.execute(select(DiscoveredHost).order_by(DiscoveredHost.last_seen.desc()))
     ).scalars().all()
 
+    # Preload scans + roles once to avoid N+1 lookups while building nodes.
+    scans_by_id = {s.id: s for s in (await db.execute(select(Scan))).scalars().all()}
+    roles_by_ip = {r.ip: r for r in (await db.execute(select(NetworkRole))).scalars().all()}
+
     nodes: dict[str, dict[str, Any]] = {}
 
     # Managed inventory first.
     for s in servers:
         key = s.ip or s.hostname
+        # Managed-only nodes have no scan to anchor a subnet; fall back to the
+        # IP's own /24 (or None if no IP).
+        segment = _compute_segment(s.ip, None) if s.ip else None
         nodes[key] = {
             "id": s.id,
             "label": s.name,
@@ -100,11 +153,14 @@ async def hosts(db: SessionDep) -> list[ScopeHostNode]:
             "managed": True,
             "discovered_host_id": None,
             "monitored": False,
+            "segment": segment,
         }
 
     # Layer discovered hosts on top.
     for h in dh_rows:
         key = h.ip
+        scan_target = scans_by_id.get(h.scan_id).target if h.scan_id in scans_by_id else None
+        segment = _compute_segment(h.ip, scan_target)
         node = nodes.get(key)
         if node is not None:
             if "discovered" not in node["origins"]:
@@ -114,6 +170,8 @@ async def hosts(db: SessionDep) -> list[ScopeHostNode]:
                 node["managed"] = True
             if h.os_guess and not node.get("os"):
                 node["os"] = h.os_guess
+            # A discovered row always gives us the best subnet signal.
+            node["segment"] = segment
         else:
             nodes[key] = {
                 "id": h.id,
@@ -126,9 +184,10 @@ async def hosts(db: SessionDep) -> list[ScopeHostNode]:
                 "managed": False,
                 "discovered_host_id": h.id,
                 "monitored": False,
+                "segment": segment,
             }
 
-    # Attach finding + port counts + monitored flag per node.
+    # Attach finding + port counts + monitored flag + role tags per node.
     for node in nodes.values():
         node["finding_count"] = await _finding_count(db, node)
         node["open_port_count"] = await _port_count(db, node)
@@ -146,6 +205,13 @@ async def hosts(db: SessionDep) -> list[ScopeHostNode]:
                 )
             ).scalar() or 0
             node["monitored"] = has_wazuh > 0
+
+        role = roles_by_ip.get(node.get("ip")) if node.get("ip") else None
+        node["is_gateway"] = bool(role and role.is_gateway)
+        node["is_dns"] = bool(role and role.is_dns)
+        node["is_switch"] = bool(role and role.is_switch)
+        node["is_access_point"] = bool(role and role.is_access_point)
+        node["role_label"] = role.label if role else None
 
     return [ScopeHostNode(**n) for n in nodes.values()]
 
@@ -284,12 +350,91 @@ async def delete_inventory(req: ScopeDeleteRequest, db: SessionDep) -> ScopeDele
     )
 
 
+@router.post("/hosts/promote", response_model=ScopePromoteResult)
+async def promote_hosts(req: ScopePromoteRequest, db: SessionDep) -> ScopePromoteResult:
+    """Create managed Server rows for discovered hosts, in bulk.
+
+    Idempotent: an IP that already matches a managed Server is reported in
+    ``already_managed`` rather than duplicated. Backfills
+    ``DiscoveredHost.matched_server_id`` for every row at that IP so the
+    Inventory table's "managed" badge reflects the link immediately, instead
+    of waiting for the next scan to re-run the ingest-time matcher.
+    """
+    requested = [ip.strip() for ip in req.ips if ip and ip.strip()]
+    if not requested:
+        raise HTTPException(status_code=400, detail="No IPs provided")
+
+    created: list[str] = []
+    already_managed: list[str] = []
+    invalid: list[str] = []
+
+    existing_names = set(
+        (await db.execute(select(Server.name))).scalars().all()
+    )
+
+    for ip in dict.fromkeys(requested):  # de-dupe, preserve order
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError:
+            invalid.append(ip)
+            continue
+
+        existing_server = (
+            await db.execute(select(Server).where(Server.ip == ip))
+        ).scalar_one_or_none()
+        if existing_server is not None:
+            already_managed.append(ip)
+            continue
+
+        dhost = (
+            await db.execute(
+                select(DiscoveredHost)
+                .where(DiscoveredHost.ip == ip)
+                .order_by(DiscoveredHost.last_seen.desc())
+            )
+        ).scalars().first()
+
+        base_name = (dhost.hostname if dhost and dhost.hostname else ip)
+        name = base_name
+        suffix = 2
+        while name in existing_names:
+            name = f"{base_name} ({suffix})"
+            suffix += 1
+        existing_names.add(name)
+
+        srv = Server(
+            name=name,
+            hostname=(dhost.hostname if dhost and dhost.hostname else ip),
+            ip=ip,
+            os=dhost.os_guess if dhost else None,
+            origin="discovered",
+            credential_id=req.credential_id,
+        )
+        db.add(srv)
+        await db.flush()
+        await db.execute(
+            sa_update(DiscoveredHost)
+            .where(DiscoveredHost.ip == ip)
+            .values(matched_server_id=srv.id)
+        )
+        created.append(ip)
+
+    await db.commit()
+    logger.info(
+        "scope.hosts_promoted",
+        created=created,
+        already_managed=already_managed,
+        invalid=invalid,
+    )
+    return ScopePromoteResult(created=created, already_managed=already_managed, invalid=invalid)
+
+
 @router.get("/findings/timeseries", response_model=list[ScopeTimeseriesPoint])
 async def findings_timeseries(
     db: SessionDep, days: int = Query(30, ge=1, le=365)
 ) -> list[ScopeTimeseriesPoint]:
     """Findings per day (by first_seen) for the line chart. Cross-dialect safe."""
-    since = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)
+    since = _dt.datetime.now(_dt.UTC) - _dt.timedelta(days=days)
     rows = (
         await db.execute(
             select(
@@ -329,6 +474,88 @@ async def ports_distribution(
         )
     ).all()
     return [ScopePortBucket(service=svc or "unknown", count=c) for svc, c in rows]
+
+
+@router.get("/segments", response_model=list[ScopeSegment])
+async def segments(db: SessionDep) -> list[ScopeSegment]:
+    """Manual label/color overrides for computed subnet groupings.
+
+    Only rows with an override are returned — the frontend defaults any
+    segment without one to {label: cidr, color: undefined}.
+    """
+    rows = (await db.execute(select(NetworkSegment))).scalars().all()
+    return [ScopeSegment.model_validate(r) for r in rows]
+
+
+@router.post("/segments", response_model=ScopeSegment)
+async def upsert_segment(req: ScopeSegmentUpdate, db: SessionDep) -> ScopeSegment:
+    """Create or update the cosmetic override (label/color) for one subnet."""
+    cidr = (req.cidr or "").strip()
+    if not cidr:
+        raise HTTPException(status_code=400, detail="cidr is required")
+    try:
+        # Validate the CIDR before persisting — reject malformed input (fail closed).
+        ipaddress.ip_network(cidr, strict=False)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid CIDR")
+    _validate_label(req.label)
+    _validate_color(req.color)
+
+    existing = (
+        await db.execute(select(NetworkSegment).where(NetworkSegment.cidr == cidr))
+    ).scalar_one_or_none()
+    if existing is None:
+        existing = NetworkSegment(cidr=cidr)
+        db.add(existing)
+    existing.label = req.label
+    existing.color = req.color
+    await db.commit()
+    await db.refresh(existing)
+    logger.info(
+        "scope.segment_upsert",
+        cidr=cidr,
+        label=req.label,
+        color=req.color,
+    )
+    return ScopeSegment.model_validate(existing)
+
+
+@router.post("/hosts/role", response_model=ScopeNetworkRole)
+async def upsert_role(req: ScopeNetworkRoleUpdate, db: SessionDep) -> ScopeNetworkRole:
+    """Create or update the network-role tags for a host, keyed by IP."""
+    ip = (req.ip or "").strip()
+    if not ip:
+        raise HTTPException(status_code=400, detail="ip is required")
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid IP address")
+    _validate_label(req.label)
+
+    existing = (
+        await db.execute(select(NetworkRole).where(NetworkRole.ip == ip))
+    ).scalar_one_or_none()
+    if existing is None:
+        existing = NetworkRole(ip=ip)
+        db.add(existing)
+    existing.is_gateway = req.is_gateway
+    existing.is_dns = req.is_dns
+    existing.is_switch = req.is_switch
+    existing.is_access_point = req.is_access_point
+    existing.label = req.label
+    existing.notes = req.notes
+    await db.commit()
+    await db.refresh(existing)
+    logger.info(
+        "scope.role_upsert",
+        ip=ip,
+        gateway=req.is_gateway,
+        dns=req.is_dns,
+        switch=req.is_switch,
+        access_point=req.is_access_point,
+        label=req.label,
+    )
+    return ScopeNetworkRole.model_validate(existing)
 
 
 @router.get("/host/{identity}", response_model=ScopeHostDetail)

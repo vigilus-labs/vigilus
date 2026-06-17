@@ -598,3 +598,44 @@ class Finding(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     __table_args__ = (UniqueConstraint("fingerprint", name="uq_finding_fingerprint"),)
+
+
+class NetworkRole(Base):
+    """Manual operator tagging of a host's network function.
+
+    Keyed by IP, not server/discovered-host id: the same IP flows between
+    managed and discovered identities across rescans, and "this is my
+    router" is a fact about the address, not a particular row. A single
+    host commonly serves multiple roles (e.g. a home router is both
+    gateway and DNS), so these are independent flags, not an enum.
+    """
+
+    __tablename__ = "network_roles"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    ip = Column(String(64), nullable=False, unique=True, index=True)
+    is_gateway = Column(Boolean, default=False, nullable=False)
+    is_dns = Column(Boolean, default=False, nullable=False)
+    is_switch = Column(Boolean, default=False, nullable=False)
+    is_access_point = Column(Boolean, default=False, nullable=False)
+    label = Column(String(255), nullable=True)   # display override, e.g. "Core Router"
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class NetworkSegment(Base):
+    """Optional manual label/color override for a computed subnet (VLAN-proxy) grouping.
+
+    Grouping membership itself is computed at request time from Scan.target;
+    this table only stores cosmetic overrides keyed by the CIDR string.
+    """
+
+    __tablename__ = "network_segments"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    cidr = Column(String(64), nullable=False, unique=True, index=True)
+    label = Column(String(255), nullable=True)   # e.g. "VLAN 10 — IoT"
+    color = Column(String(32), nullable=True)     # hex, e.g. "#7c3aed"
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)

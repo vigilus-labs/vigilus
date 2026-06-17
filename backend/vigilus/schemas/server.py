@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from ipaddress import ip_address
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from vigilus.db.models import ServerStatus
 
@@ -22,6 +23,15 @@ class ServerCreate(BaseModel):
     tags: list[str] = Field(default_factory=list)
     credential_id: str | None = None
     notes: str | None = None
+    ip: str | None = None  # optional; links this server to its Scope-discovered identity
+
+    @field_validator("ip")
+    @classmethod
+    def _validate_ip(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        ip_address(v)  # raises ValueError -> 422 if malformed
+        return v
 
 
 class ServerUpdate(BaseModel):
@@ -38,6 +48,15 @@ class ServerUpdate(BaseModel):
     credential_id: str | None = None
     notes: str | None = None
     status: ServerStatus | None = None
+    ip: str | None = None
+
+    @field_validator("ip")
+    @classmethod
+    def _validate_ip(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        ip_address(v)  # raises ValueError -> 422 if malformed
+        return v
 
 
 class ServerResponse(BaseModel):
@@ -54,6 +73,7 @@ class ServerResponse(BaseModel):
     tags: list[str] = Field(default_factory=list)
     credential_id: str | None = None
     notes: str | None = None
+    ip: str | None = None
     last_seen: datetime | None = None
     status: ServerStatus = ServerStatus.unknown
     created_at: datetime

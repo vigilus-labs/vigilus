@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Trash2, Search, ShieldCheck, ArrowUpDown, Wifi, AlertTriangle } from 'lucide-react';
+import { Trash2, Search, ShieldCheck, ArrowUpDown, Wifi, AlertTriangle, ServerCog } from 'lucide-react';
 import type { ScopeInventoryHost } from '@/types';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -34,11 +34,13 @@ export function InventoryTable({
   loading,
   onSelect,
   onDeleted,
+  onPromoted,
 }: {
   hosts: ScopeInventoryHost[];
   loading: boolean;
   onSelect: (ip: string) => void;
   onDeleted: () => void;
+  onPromoted: () => void;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -47,6 +49,7 @@ export function InventoryTable({
   const [sortKey, setSortKey] = useState<SortKey>('last_seen');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [deleting, setDeleting] = useState(false);
+  const [promoting, setPromoting] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -152,6 +155,26 @@ export function InventoryTable({
     }
   }
 
+  async function handlePromote() {
+    const ips = [...selected];
+    if (ips.length === 0) return;
+    setPromoting(true);
+    try {
+      const res = await api.scopePromoteHosts(ips);
+      const parts: string[] = [];
+      if (res.created.length) parts.push(`added ${res.created.length}`);
+      if (res.already_managed.length) parts.push(`${res.already_managed.length} already managed`);
+      if (res.invalid.length) parts.push(`${res.invalid.length} invalid`);
+      toast(parts.length ? parts.join(', ') : 'Nothing to add', res.created.length ? 'success' : 'info');
+      setSelected(new Set());
+      onPromoted();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Add to inventory failed', 'error');
+    } finally {
+      setPromoting(false);
+    }
+  }
+
   const SortHeader = ({ label, k, className }: { label: string; k: SortKey; className?: string }) => (
     <th className={cn('px-3 py-2 font-medium select-none', className)}>
       <button
@@ -182,10 +205,23 @@ export function InventoryTable({
           {filtered.length} host{filtered.length === 1 ? '' : 's'}
         </span>
         <button
+          onClick={handlePromote}
+          disabled={selected.size === 0 || promoting}
+          className={cn(
+            'ml-auto inline-flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-md font-medium transition-colors',
+            selected.size === 0 || promoting
+              ? 'bg-surface text-text-secondary/50 cursor-not-allowed'
+              : 'bg-accent/10 text-accent hover:bg-accent/20',
+          )}
+        >
+          <ServerCog className="w-3.5 h-3.5" />
+          {promoting ? 'Adding…' : `Add to Server Inventory${selected.size ? ` (${selected.size})` : ''}`}
+        </button>
+        <button
           onClick={handleDelete}
           disabled={selected.size === 0 || deleting}
           className={cn(
-            'ml-auto inline-flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-md font-medium transition-colors',
+            'inline-flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-md font-medium transition-colors',
             selected.size === 0 || deleting
               ? 'bg-surface text-text-secondary/50 cursor-not-allowed'
               : 'bg-danger/10 text-danger hover:bg-danger/20',

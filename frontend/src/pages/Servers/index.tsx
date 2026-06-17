@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
-import { Server as ServerIcon, Plus, Trash2, Edit2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Server as ServerIcon, Plus, Trash2, Edit2, ChevronDown, Radar } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useToast, useConfirm } from '@/components/Notifications';
-import { Server, Credential } from '@/types';
+import { Server, Credential, ScopeInventoryHost } from '@/types';
 import { cn } from '@/lib/utils';
+import { PickFromScopeModal } from './PickFromScopeModal';
 
 export default function Servers() {
   const toast = useToast();
@@ -14,6 +15,10 @@ export default function Servers() {
   // null = form closed, '' = adding, otherwise the id of the server being edited
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [fromScope, setFromScope] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
 
   // Form State
   const [name, setName] = useState('');
@@ -22,6 +27,19 @@ export default function Servers() {
   const [credentialId, setCredentialId] = useState('');
   const [os, setOs] = useState('');
   const [osVersion, setOsVersion] = useState('');
+  const [ip, setIp] = useState('');
+
+  // Close the "Add Server" chooser on an outside click (mirrors the
+  // OpenRouter model-search dropdown in Settings).
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setAddMenuOpen(false);
+      }
+    };
+    if (addMenuOpen) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [addMenuOpen]);
 
   const fetchData = async () => {
     try {
@@ -50,6 +68,8 @@ export default function Servers() {
     setCredentialId('');
     setOs('');
     setOsVersion('');
+    setIp('');
+    setFromScope(false);
     setEditingId('');
   };
 
@@ -60,6 +80,8 @@ export default function Servers() {
     setCredentialId(s.credential_id || '');
     setOs(s.os || '');
     setOsVersion(s.os_version || '');
+    setIp(s.ip || '');
+    setFromScope(false);
     setEditingId(s.id);
   };
 
@@ -71,6 +93,23 @@ export default function Servers() {
     setCredentialId('');
     setOs('');
     setOsVersion('');
+    setIp('');
+    setFromScope(false);
+  };
+
+  // "From Scope" picker handed back a discovered host — seed the normal add
+  // form with it (still editable/confirmable) instead of creating silently.
+  const pickFromScope = (host: ScopeInventoryHost) => {
+    setPickerOpen(false);
+    setName(host.hostname || host.ip);
+    setHostname(host.hostname || host.ip);
+    setPort('22');
+    setCredentialId('');
+    setOs(host.os || '');
+    setOsVersion('');
+    setIp(host.ip);
+    setFromScope(true);
+    setEditingId('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -84,6 +123,7 @@ export default function Servers() {
         credential_id: credentialId || null,
         os: os.trim() || null,
         os_version: osVersion.trim() || null,
+        ip: ip.trim() || null,
       };
       if (editingId === '') {
         await api.createServer(payload);
@@ -122,19 +162,54 @@ export default function Servers() {
           <h1 className="text-2xl font-medium text-text-primary mb-1">Servers</h1>
           <p className="text-text-secondary text-sm">Manage your homelab infrastructure and SSH credentials.</p>
         </div>
-        <button 
-          onClick={() => (editingId === null ? openAdd() : closeForm())}
-          className="bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          {editingId !== null ? 'Cancel' : 'Add Server'}
-        </button>
+        <div className="relative" ref={addMenuRef}>
+          <button
+            onClick={() => (editingId === null ? setAddMenuOpen((v) => !v) : closeForm())}
+            className="bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center"
+          >
+            {editingId !== null ? (
+              'Cancel'
+            ) : (
+              <>
+                <Plus className="w-4 h-4 mr-2" />
+                Add Server
+                <ChevronDown className={cn('w-3.5 h-3.5 ml-1.5 transition-transform', addMenuOpen && 'rotate-180')} />
+              </>
+            )}
+          </button>
+          {addMenuOpen && editingId === null && (
+            <div className="absolute right-0 mt-1 w-48 bg-white border border-border rounded-md shadow-lg z-20 overflow-hidden">
+              <button
+                onClick={() => { setAddMenuOpen(false); openAdd(); }}
+                className="w-full text-left px-3 py-2.5 text-sm text-text-primary hover:bg-surface transition-colors"
+              >
+                From scratch
+              </button>
+              <button
+                onClick={() => { setAddMenuOpen(false); setPickerOpen(true); }}
+                className="w-full text-left px-3 py-2.5 text-sm text-text-primary hover:bg-surface transition-colors border-t border-border flex items-center gap-2"
+              >
+                <Radar className="w-3.5 h-3.5 text-text-secondary" />
+                From Scope
+              </button>
+            </div>
+          )}
+        </div>
       </div>
+
+      {pickerOpen && (
+        <PickFromScopeModal onClose={() => setPickerOpen(false)} onPick={pickFromScope} />
+      )}
 
       {editingId !== null && (
         <form onSubmit={handleSubmit} className="bg-surface border border-border rounded-card p-6 mb-8 max-w-2xl">
-          <h3 className="text-sm font-medium text-text-primary mb-4">
+          <h3 className="text-sm font-medium text-text-primary mb-4 flex items-center gap-2">
             {editingId === '' ? 'Add New Server' : 'Edit Server'}
+            {fromScope && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-info/15 text-info normal-case">
+                <Radar className="w-2.5 h-2.5" /> from Scope
+              </span>
+            )}
           </h3>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
@@ -157,6 +232,12 @@ export default function Servers() {
                   <option key={c.id} value={c.id}>{c.name} ({c.type})</option>
                 ))}
               </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[12px] font-medium text-text-secondary uppercase">
+                IP Address <span className="text-text-secondary/50 normal-case">(optional — links to Scope)</span>
+              </label>
+              <input value={ip} onChange={e => setIp(e.target.value)} placeholder="192.168.1.100" className="w-full px-3 py-2 text-[13px] bg-white border border-border rounded-md font-mono" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[12px] font-medium text-text-secondary uppercase">OS Type <span className="text-text-secondary/50 normal-case">(optional)</span></label>

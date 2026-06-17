@@ -45,6 +45,11 @@ import type {
   ScopeHostDetail,
   ScopeInventoryHost,
   ScopeDeleteResult,
+  ScopePromoteResult,
+  ScopeNetworkRole,
+  ScopeNetworkRoleUpdate,
+  ScopeSegment,
+  ScopeSegmentUpdate,
 } from '@/types';
 
 export interface OrchestratorConfig {
@@ -565,6 +570,25 @@ class ApiClient {
 
   scopeDeleteHosts(ips: string[]) {
     return this.post<ScopeDeleteResult>('/scope/inventory/delete', { ips });
+  }
+
+  scopePromoteHosts(ips: string[], credentialId?: string | null) {
+    return this.post<ScopePromoteResult>('/scope/hosts/promote', {
+      ips,
+      credential_id: credentialId || null,
+    });
+  }
+
+  scopeSegments() {
+    return this.get<ScopeSegment[]>('/scope/segments');
+  }
+
+  scopeSetSegment(payload: ScopeSegmentUpdate) {
+    return this.post<ScopeSegment>('/scope/segments', payload);
+  }
+
+  scopeSetHostRole(payload: ScopeNetworkRoleUpdate) {
+    return this.post<ScopeNetworkRole>('/scope/hosts/role', payload);
   }
 }
 
