@@ -40,11 +40,23 @@ class McpConnection:
         repo_path = os.path.join(repos_dir, self.server_id)
         
         if not os.path.exists(repo_path):
-            logger.info("mcp.clone_repo", url=self.github_url, dest=repo_path)
-            proc = await asyncio.create_subprocess_exec("git", "clone", self.github_url, repo_path)
+            # Re-validate at the point of use: a row may have been created
+            # before this check existed or via a path that skips the schema
+            # (e.g. JSON import). Raises ValueError on an unsafe URL.
+            from vigilus.schemas.mcp import validate_github_url
+
+            clone_url = validate_github_url(self.github_url)
+            logger.info("mcp.clone_repo", url=clone_url, dest=repo_path)
+            # "--" stops git parsing later args as options; GIT_ALLOW_PROTOCOL
+            # restricts transports so even a malformed URL can't reach git's
+            # command-executing helpers (ext::, fd::, …).
+            clone_env = {**os.environ, "GIT_ALLOW_PROTOCOL": "https:http:git:ssh"}
+            proc = await asyncio.create_subprocess_exec(
+                "git", "clone", "--", clone_url, repo_path, env=clone_env
+            )
             await proc.wait()
             if proc.returncode != 0:
-                raise RuntimeError(f"Git clone failed for {self.github_url}")
+                raise RuntimeError(f"Git clone failed for {clone_url}")
                 
             if self.install_command:
                 logger.info("mcp.run_install", cmd=self.install_command, cwd=repo_path)

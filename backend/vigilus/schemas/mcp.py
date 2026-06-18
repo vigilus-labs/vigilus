@@ -2,12 +2,46 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from vigilus.db.models import McpServerStatus, McpTransport
+
+# A github_url is later handed to `git clone`. git treats certain URL forms as
+# code, not data: the `transport::address` helper syntax (e.g. `ext::sh -c ...`)
+# executes arbitrary commands, `file://` reads local paths, and a value
+# starting with `-` is parsed as a git option (argument injection). We allowlist
+# only http(s)/git/ssh transports and the scp-like `user@host:path` form.
+_GIT_SAFE_SCHEME = re.compile(r"^(?:https?|git|ssh)://", re.IGNORECASE)
+_GIT_SCP_LIKE = re.compile(r"^(?:[A-Za-z0-9._~-]+@)?[A-Za-z0-9._-]+:(?!//)")
+
+
+def validate_github_url(url: str | None) -> str | None:
+    """Normalize and constrain a clone URL; raise ValueError if unsafe.
+
+    Returns the stripped URL, or None for empty/None input.
+    """
+    if url is None:
+        return None
+    url = url.strip()
+    if not url:
+        return None
+    if url.startswith("-"):
+        raise ValueError("github_url must not start with '-'")
+    if "::" in url:
+        # git's transport::address syntax (ext::, fd::, …) can run commands.
+        raise ValueError("github_url must not contain '::'")
+    if url.lower().startswith("file://"):
+        raise ValueError("local file:// URLs are not allowed for github_url")
+    if _GIT_SAFE_SCHEME.match(url) or _GIT_SCP_LIKE.match(url):
+        return url
+    raise ValueError(
+        "github_url must be an http(s), git, or ssh URL "
+        "(e.g. https://github.com/owner/repo.git)"
+    )
 
 
 class McpServerCreate(BaseModel):
@@ -26,6 +60,10 @@ class McpServerCreate(BaseModel):
     install_command: Optional[str] = None
     working_dir: Optional[str] = None
 
+    _check_github_url = field_validator("github_url")(
+        lambda cls, v: validate_github_url(v)
+    )
+
 
 class McpServerUpdate(BaseModel):
     """Schema for updating an existing MCP server."""
@@ -42,6 +80,10 @@ class McpServerUpdate(BaseModel):
     github_url: Optional[str] = None
     install_command: Optional[str] = None
     working_dir: Optional[str] = None
+
+    _check_github_url = field_validator("github_url")(
+        lambda cls, v: validate_github_url(v)
+    )
 
 
 class McpServerResponse(BaseModel):
