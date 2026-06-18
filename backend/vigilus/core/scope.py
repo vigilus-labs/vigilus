@@ -12,9 +12,14 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import xml.etree.ElementTree as ET
 from typing import Any
 
+# defusedxml hardens parsing against entity-expansion bombs (billion laughs /
+# quadratic blowup) and external-entity tricks. The XML fed here is untrusted:
+# it comes from the LLM-callable scope_ingest tool and from nmap output whose
+# banners/hostnames are influenced by the scanned host. Same fromstring/
+# ParseError surface as the stdlib module, so it drops in cleanly.
+import defusedxml.ElementTree as ET  # noqa: N817
 import structlog
 from sqlalchemy import select
 
@@ -334,7 +339,10 @@ def _parse_nmap_xml(xml: str) -> list[dict]:
     hosts: list[dict] = []
     try:
         root = ET.fromstring(xml)
-    except ET.ParseError as e:
+    except (ET.ParseError, ValueError) as e:
+        # ValueError covers defusedxml's DTD/entity rejections (DefusedXmlException
+        # subclasses ValueError) — a hostile payload degrades to "no hosts", logged,
+        # rather than propagating.
         logger.warning("scope.nmap_xml_parse_failed", error=str(e))
         return hosts
 
