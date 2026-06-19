@@ -34,7 +34,7 @@ A web dashboard + conversational AI + MCP server manager + user-definable agent 
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/vigilus.git
+git clone https://github.com/vigilus-labs/vigilus.git
 cd vigilus
 
 # Backend setup
@@ -50,7 +50,25 @@ npm install
 npm run dev
 ```
 
-### Docker
+### Docker (prebuilt image)
+
+Published to GHCR on every release and `main` build. `VIGILUS_SECRET` is
+required — generate a stable one and keep it (it encrypts stored API keys and
+SSH credentials, so changing it makes existing data unreadable):
+
+```bash
+docker run -d --name vigilus \
+  -p 8000:8000 \
+  -e VIGILUS_SECRET="$(openssl rand -hex 32)" \
+  -v vigilus-data:/app/data \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  ghcr.io/vigilus-labs/vigilus:latest
+```
+
+Access the UI at `http://localhost:8000`. Pin a version with
+`ghcr.io/vigilus-labs/vigilus:vX.Y.Z` instead of `:latest`.
+
+### Docker (build from source)
 
 `docker/docker-compose.yml` requires `VIGILUS_SECRET` at parse time (it uses
 `${VIGILUS_SECRET:?...}`), so provide it via an env file in the compose

@@ -20,14 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python dependencies
-COPY backend/pyproject.toml ./backend/
-RUN pip install --no-cache-dir -e "./backend[prod]" 2>/dev/null || pip install --no-cache-dir -e "./backend"
-
-# Copy backend source
+# Copy backend source and install the package
 COPY backend/ ./backend/
-
-# Install the package
 RUN pip install --no-cache-dir -e ./backend
 
 # Copy built frontend
