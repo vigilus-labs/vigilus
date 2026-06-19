@@ -65,6 +65,12 @@ class TelegramAdapter(ChannelAdapter):
         self._client = httpx.AsyncClient(timeout=70.0)
         me = await self._call("getMe")
         self._bot_username = (me.get("result") or {}).get("username")
+        # This adapter is long-poll only; a leftover webhook would make every
+        # getUpdates return 409 Conflict. Clear it best-effort before polling.
+        try:
+            await self._call("deleteWebhook")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("telegram.delete_webhook_failed", error=self._redact(str(e)))
         self._running = True
         self._task = asyncio.create_task(self._poll_loop())
         logger.info("telegram.started", bot=self._bot_username)
@@ -108,7 +114,7 @@ class TelegramAdapter(ChannelAdapter):
             except asyncio.CancelledError:
                 break
             except Exception as e:  # noqa: BLE001
-                logger.warning("telegram.poll_error", error=str(e))
+                logger.warning("telegram.poll_error", error=self._redact(str(e)))
                 await asyncio.sleep(3)
 
     def _dispatch(self, coro) -> None:
@@ -245,8 +251,20 @@ class TelegramAdapter(ChannelAdapter):
         except Exception:  # noqa: BLE001
             pass
 
+    def _redact(self, text: str) -> str:
+        """Strip the bot token from a string before it can reach logs."""
+        return text.replace(self._token, "***") if self._token else text
+
     async def _call(self, method: str, params: dict | None = None) -> dict:
         assert self._client is not None
         r = await self._client.post(_URL.format(token=self._token, method=method), json=params or {})
-        r.raise_for_status()
+        try:
+            r.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            # httpx embeds the full request URL — which contains the bot token —
+            # in the exception message. Re-raise with it redacted so callers
+            # that log str(e) never leak the token.
+            raise httpx.HTTPStatusError(
+                self._redact(str(e)), request=e.request, response=e.response
+            ) from None
         return r.json()
