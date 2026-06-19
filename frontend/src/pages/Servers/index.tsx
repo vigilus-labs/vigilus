@@ -178,7 +178,7 @@ export default function Servers() {
             )}
           </button>
           {addMenuOpen && editingId === null && (
-            <div className="absolute right-0 mt-1 w-48 bg-white border border-border rounded-md shadow-lg z-20 overflow-hidden">
+            <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-surface border border-border rounded-md shadow-lg z-20 overflow-hidden">
               <button
                 onClick={() => { setAddMenuOpen(false); openAdd(); }}
                 className="w-full text-left px-3 py-2.5 text-sm text-text-primary hover:bg-surface transition-colors"
@@ -214,19 +214,19 @@ export default function Servers() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[12px] font-medium text-text-secondary uppercase">Display Name</label>
-              <input required value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Prod DB" className="w-full px-3 py-2 text-[13px] bg-white border border-border rounded-md" />
+              <input required value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Prod DB" className="input" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[12px] font-medium text-text-secondary uppercase">Hostname / IP</label>
-              <input required value={hostname} onChange={e => setHostname(e.target.value)} placeholder="192.168.1.100" className="w-full px-3 py-2 text-[13px] bg-white border border-border rounded-md font-mono" />
+              <input required value={hostname} onChange={e => setHostname(e.target.value)} placeholder="192.168.1.100" className="input font-mono" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[12px] font-medium text-text-secondary uppercase">SSH Port</label>
-              <input required type="number" value={port} onChange={e => setPort(e.target.value)} className="w-full px-3 py-2 text-[13px] bg-white border border-border rounded-md font-mono" />
+              <input required type="number" value={port} onChange={e => setPort(e.target.value)} className="input font-mono" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[12px] font-medium text-text-secondary uppercase">Credential</label>
-              <select value={credentialId} onChange={e => setCredentialId(e.target.value)} className="w-full px-3 py-2 text-[13px] bg-white border border-border rounded-md">
+              <select value={credentialId} onChange={e => setCredentialId(e.target.value)} className="input">
                 <option value="">None (Use local auth)</option>
                 {credentials.map(c => (
                   <option key={c.id} value={c.id}>{c.name} ({c.type})</option>
@@ -237,15 +237,15 @@ export default function Servers() {
               <label className="text-[12px] font-medium text-text-secondary uppercase">
                 IP Address <span className="text-text-secondary/50 normal-case">(optional — links to Scope)</span>
               </label>
-              <input value={ip} onChange={e => setIp(e.target.value)} placeholder="192.168.1.100" className="w-full px-3 py-2 text-[13px] bg-white border border-border rounded-md font-mono" />
+              <input value={ip} onChange={e => setIp(e.target.value)} placeholder="192.168.1.100" className="input font-mono" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[12px] font-medium text-text-secondary uppercase">OS Type <span className="text-text-secondary/50 normal-case">(optional)</span></label>
-              <input value={os} onChange={e => setOs(e.target.value)} placeholder="e.g. Ubuntu" className="w-full px-3 py-2 text-[13px] bg-white border border-border rounded-md" />
+              <input value={os} onChange={e => setOs(e.target.value)} placeholder="e.g. Ubuntu" className="input" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[12px] font-medium text-text-secondary uppercase">OS Version <span className="text-text-secondary/50 normal-case">(optional)</span></label>
-              <input value={osVersion} onChange={e => setOsVersion(e.target.value)} placeholder="e.g. 22.04" className="w-full px-3 py-2 text-[13px] bg-white border border-border rounded-md font-mono" />
+              <input value={osVersion} onChange={e => setOsVersion(e.target.value)} placeholder="e.g. 22.04" className="input font-mono" />
             </div>
           </div>
           <p className="text-[11px] text-text-secondary/70 mt-3">
@@ -253,7 +253,7 @@ export default function Servers() {
           </p>
           <div className="flex justify-end gap-3 mt-6">
             <button type="button" onClick={closeForm} className="px-4 py-2 text-sm font-medium text-text-secondary hover:text-text-primary">Cancel</button>
-            <button type="submit" disabled={saving} className="px-4 py-2 text-sm font-medium bg-text-primary text-white rounded-md disabled:opacity-50">
+            <button type="submit" disabled={saving} className="px-4 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-md disabled:opacity-50 transition-colors">
               {saving ? 'Saving...' : 'Save Server'}
             </button>
           </div>
@@ -264,7 +264,7 @@ export default function Servers() {
         <div className="py-12 text-center text-text-secondary text-sm">Loading servers...</div>
       ) : servers.length === 0 ? (
         <div className="bg-surface border border-border rounded-card p-12 text-center">
-          <div className="bg-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-border shadow-sm">
+          <div className="bg-white dark:bg-surface w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-border shadow-sm">
             <ServerIcon className="w-8 h-8 text-text-secondary" />
           </div>
           <h3 className="text-lg font-medium text-text-primary mb-2">No servers found</h3>
@@ -273,7 +273,7 @@ export default function Servers() {
           </p>
           <button 
             onClick={openAdd}
-            className="bg-white border border-border hover:bg-surface text-text-primary px-4 py-2 rounded-md text-sm font-medium transition-colors"
+            className="bg-white dark:bg-surface border border-border hover:bg-surface dark:hover:bg-border text-text-primary px-4 py-2 rounded-md text-sm font-medium transition-colors"
           >
             Add Server
           </button>
@@ -281,7 +281,7 @@ export default function Servers() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {servers.map(server => (
-            <div key={server.id} className="bg-white border border-border rounded-card p-5 shadow-sm">
+            <div key={server.id} className="bg-white dark:bg-surface border border-border rounded-card p-5 shadow-sm">
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center">
                   <div className={cn("w-2 h-2 rounded-full mr-2", server.status === 'online' ? "bg-success" : server.status === 'offline' ? "bg-danger" : "bg-warning")} />
