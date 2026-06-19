@@ -15,7 +15,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from vigilus.providers.base import LLMMessage
+from vigilus.providers.base import LLMMessage, ProviderError
 from vigilus.db.models import Operator, OperatorTool
 from vigilus.core.operator_runtime import OperatorRuntime
 
@@ -232,6 +232,21 @@ async def execute_delegation(
             "tool_calls": tool_history,
         }
 
+    except ProviderError as e:
+        # Upstream LLM failure (timeout / 5xx / rate limit) — already retried by
+        # the provider layer. Not a Vigilus bug, so log it concisely without a
+        # full traceback (which would dump every tool schema in the locals).
+        logger.warning(
+            "delegation.provider_error",
+            target=target_name,
+            error=str(e),
+            status_code=getattr(e, "status_code", None),
+        )
+        return {
+            "status": "error",
+            "operator": target_name,
+            "error": f"Operator '{target_name}' failed: {e}",
+        }
     except Exception as e:
         logger.exception("delegation.failed", target=target_name, error=str(e))
         return {
