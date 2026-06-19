@@ -1,0 +1,26 @@
+# Build artifacts and dependencies — rebuilt inside the image
+**/node_modules
+frontend/dist
+backend/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+*.egg-info
+
+# Runtime data and secrets — must never enter an image layer
+backend/data
+data
+**/.env
+**/.env.*
+docker/.env
+data/known_hosts
+
+# Local tooling / VCS
+.git
+.gitignore
+.github
+**/.DS_Store
+
+# Scratch design docs (kept untracked per CLAUDE.md)
+*_IMPLEMENTATION_PLAN.md
