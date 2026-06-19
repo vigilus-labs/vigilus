@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     # How long a denied tool call waits for the user to approve/deny the
     # JIT request before giving up (seconds). The whole delegation pauses.
     jit_wait_seconds: int = 180
+    # Same, but for unattended runs (scheduled tasks): nobody is watching the
+    # chat, so the global JIT banner / channels need a longer window for a
+    # human to approve before we fail closed. Never auto-grants.
+    jit_wait_seconds_unattended: int = 1800
 
     # ── CORS ────────────────────────────────────────────────
     cors_origins: list[str] = ["http://localhost:5173"]

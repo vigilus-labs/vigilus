@@ -171,6 +171,49 @@ async def test_execution_pauses_until_denied(denied_setup, db_session):
 
 
 @pytest.mark.asyncio
+async def test_unattended_uses_longer_wait_and_fails_closed(denied_setup, monkeypatch):
+    """Scheduled (unattended) runs use the longer JIT wait, and still fail
+    closed when nobody approves in time — never auto-granting."""
+    from vigilus.config import get_settings
+
+    op, tool, path = denied_setup
+    registry = ToolRegistry()
+    captured = {}
+
+    async def fake_wait(self, request_id, wait_seconds):
+        captured["wait"] = wait_seconds
+        return None  # timeout: nobody approved
+
+    monkeypatch.setattr(ToolRegistry, "_wait_for_jit_resolution", fake_wait)
+
+    result = await registry.execute(tool.name, {"path": path}, operator=op, unattended=True)
+
+    assert result.success is False  # fail closed
+    assert captured["wait"] == get_settings().jit_wait_seconds_unattended
+
+
+@pytest.mark.asyncio
+async def test_attended_uses_default_wait(denied_setup, monkeypatch):
+    """Interactive runs use the (shorter) default JIT wait."""
+    from vigilus.config import get_settings
+
+    op, tool, path = denied_setup
+    registry = ToolRegistry()
+    captured = {}
+
+    async def fake_wait(self, request_id, wait_seconds):
+        captured["wait"] = wait_seconds
+        return None
+
+    monkeypatch.setattr(ToolRegistry, "_wait_for_jit_resolution", fake_wait)
+
+    result = await registry.execute(tool.name, {"path": path}, operator=op)
+
+    assert result.success is False
+    assert captured["wait"] == get_settings().jit_wait_seconds
+
+
+@pytest.mark.asyncio
 async def test_resolve_server_by_name_and_hostname(db_session):
     """ssh tools accept server name/hostname, not just UUID — and report
     missing credentials clearly."""

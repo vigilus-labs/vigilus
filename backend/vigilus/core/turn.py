@@ -33,6 +33,7 @@ async def run_turn(
     system_extra: str | None = None,
     save_user_message: bool = True,
     auto_title: bool = True,
+    unattended: bool = False,
 ) -> str:
     """Persist the user message, run the orchestrator to completion, persist the
     replies, and return the final assistant text.
@@ -104,6 +105,7 @@ async def run_turn(
         session_id=session.id,
         bridge=bridge,
         cancel_event=cancel_event,
+        unattended=unattended,
     )
 
     final_text = ""

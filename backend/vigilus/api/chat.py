@@ -266,6 +266,7 @@ async def _run_orchestrator(
     max_delegations: int = 5,
     bridge: StreamBridge | None = None,
     cancel_event: Any | None = None,  # asyncio.Event — stop when set
+    unattended: bool = False,  # scheduled run — use longer JIT wait
 ) -> list[dict[str, Any]]:
     """Run the Vigilus orchestrator loop.
 
@@ -431,7 +432,7 @@ async def _run_orchestrator(
         async with factory() as del_db:
             delegation_result = await execute_delegation(
                 delegation, db=del_db, session_id=session_id,
-                bridge=bridge, cancel_event=cancel_event,
+                bridge=bridge, cancel_event=cancel_event, unattended=unattended,
             )
 
         await event_bus.publish("action.completed", {

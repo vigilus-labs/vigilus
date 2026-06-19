@@ -18,35 +18,98 @@ import { api } from '@/lib/api';
 import { ScheduledTask, Operator, ScheduleStatus } from '@/types';
 import { useToast, useConfirm } from '@/components/Notifications';
 
-// Common schedules so users don't have to know cron syntax.
-// Times are UTC (the scheduler runs in UTC).
-const CRON_PRESETS: { label: string; value: string }[] = [
-  { label: 'Every 15 minutes', value: '*/15 * * * *' },
-  { label: 'Every hour', value: '0 * * * *' },
-  { label: 'Daily at 8:00 AM', value: '0 8 * * *' },
-  { label: 'Daily at 2:00 AM', value: '0 2 * * *' },
-  { label: 'Weekly (Sunday 3:00 AM)', value: '0 3 * * 0' },
-  { label: 'Monthly (1st, 4:00 AM)', value: '0 4 1 * *' },
-  { label: 'Custom cron expression…', value: 'custom' },
+// Friendly schedule builder. The user picks a frequency + time in plain
+// language; we assemble a 5-field cron string (interpreted by the backend in
+// the configured app timezone). "Custom" leaves the raw cron field exposed.
+type Frequency = 'minutes' | 'hours' | 'daily' | 'weekly' | 'monthly' | 'custom';
+
+const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
+  { value: 'minutes', label: 'Every N minutes' },
+  { value: 'hours', label: 'Every N hours' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'custom', label: 'Custom cron expression' },
 ];
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const EMPTY_FORM = {
   name: '',
   description: '',
-  preset: '0 8 * * *',
+  frequency: 'daily' as Frequency,
+  interval: 15, // for minutes/hours
+  time: '08:00', // HH:MM for daily/weekly/monthly
+  weekday: 1, // 0=Sun..6=Sat (weekly)
+  dayOfMonth: 1, // 1..28 (monthly)
   customCron: '',
   taskPrompt: '',
   operatorId: '',
   enabled: true,
 };
 
-function cronOf(form: typeof EMPTY_FORM): string {
-  return form.preset === 'custom' ? form.customCron.trim() : form.preset;
+type SchedForm = typeof EMPTY_FORM;
+
+const clamp = (n: number, lo: number, hi: number) =>
+  Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : lo));
+
+/** Assemble a 5-field cron expression from the structured form. */
+function buildCron(f: SchedForm): string {
+  const [hhRaw, mmRaw] = (f.time || '08:00').split(':');
+  const hh = clamp(parseInt(hhRaw, 10), 0, 23);
+  const mm = clamp(parseInt(mmRaw, 10), 0, 59);
+  switch (f.frequency) {
+    case 'minutes':
+      return `*/${clamp(f.interval, 1, 59)} * * * *`;
+    case 'hours':
+      return `0 */${clamp(f.interval, 1, 23)} * * *`;
+    case 'daily':
+      return `${mm} ${hh} * * *`;
+    case 'weekly':
+      return `${mm} ${hh} * * ${clamp(f.weekday, 0, 6)}`;
+    case 'monthly':
+      return `${mm} ${hh} ${clamp(f.dayOfMonth, 1, 28)} * *`;
+    case 'custom':
+      return f.customCron.trim();
+  }
 }
 
-function presetLabel(cron: string): string | null {
-  const preset = CRON_PRESETS.find((p) => p.value === cron);
-  return preset ? preset.label : null;
+/** Best-effort: recognise a cron string as one of the friendly frequencies. */
+function parseCron(cron: string): Partial<SchedForm> {
+  const c = cron.trim();
+  let m: RegExpMatchArray | null;
+  if ((m = c.match(/^\*\/(\d+) \* \* \* \*$/)))
+    return { frequency: 'minutes', interval: parseInt(m[1], 10) };
+  if ((m = c.match(/^0 \*\/(\d+) \* \* \*$/)))
+    return { frequency: 'hours', interval: parseInt(m[1], 10) };
+  const hhmm = (h: string, mn: string) =>
+    `${mn.padStart(2, '0')}`.slice(0, 2) && `${h.padStart(2, '0')}:${mn.padStart(2, '0')}`;
+  if ((m = c.match(/^(\d+) (\d+) \* \* \*$/)))
+    return { frequency: 'daily', time: hhmm(m[2], m[1]) };
+  if ((m = c.match(/^(\d+) (\d+) \* \* (\d+)$/)))
+    return { frequency: 'weekly', time: hhmm(m[2], m[1]), weekday: parseInt(m[3], 10) };
+  if ((m = c.match(/^(\d+) (\d+) (\d+) \* \*$/)))
+    return { frequency: 'monthly', time: hhmm(m[2], m[1]), dayOfMonth: parseInt(m[3], 10) };
+  return { frequency: 'custom', customCron: c };
+}
+
+/** Human-readable summary of the current schedule. */
+function describeSchedule(f: SchedForm, tz: string): string {
+  const t = f.time || '08:00';
+  switch (f.frequency) {
+    case 'minutes':
+      return `Every ${clamp(f.interval, 1, 59)} minute(s)`;
+    case 'hours':
+      return `Every ${clamp(f.interval, 1, 23)} hour(s)`;
+    case 'daily':
+      return `Every day at ${t} (${tz})`;
+    case 'weekly':
+      return `Every ${WEEKDAYS[clamp(f.weekday, 0, 6)]} at ${t} (${tz})`;
+    case 'monthly':
+      return `On day ${clamp(f.dayOfMonth, 1, 28)} of each month at ${t} (${tz})`;
+    case 'custom':
+      return f.customCron.trim() ? `Custom: ${f.customCron.trim()}` : 'Enter a cron expression';
+  }
 }
 
 function formatTime(iso: string | null): string {
@@ -105,6 +168,7 @@ export default function Tasks() {
   const [operators, setOperators] = useState<Operator[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [timezone, setTimezone] = useState('UTC');
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -126,6 +190,10 @@ export default function Tasks() {
   useEffect(() => {
     fetchTasks();
     api.listOperators().then(setOperators).catch(() => {});
+    api
+      .getOrchestratorConfig()
+      .then((cfg) => setTimezone(cfg.timezone || 'UTC'))
+      .catch(() => {});
     // Poll so "running" status and results update while a task executes
     const interval = setInterval(fetchTasks, 8000);
     return () => clearInterval(interval);
@@ -138,13 +206,12 @@ export default function Tasks() {
   };
 
   const openEdit = (task: ScheduledTask) => {
-    const isPreset = CRON_PRESETS.some((p) => p.value === task.cron_expression);
     setEditingId(task.id);
     setForm({
+      ...EMPTY_FORM,
       name: task.name,
       description: task.description || '',
-      preset: isPreset ? task.cron_expression : 'custom',
-      customCron: isPreset ? '' : task.cron_expression,
+      ...parseCron(task.cron_expression),
       taskPrompt: task.task_prompt,
       operatorId: task.operator_id || '',
       enabled: task.enabled,
@@ -153,7 +220,7 @@ export default function Tasks() {
   };
 
   const handleSave = async () => {
-    const cron = cronOf(form);
+    const cron = buildCron(form);
     if (!form.name.trim() || !cron || !form.taskPrompt.trim()) {
       toast('Name, schedule, and task prompt are required.', 'error');
       return;
@@ -230,7 +297,9 @@ export default function Tasks() {
           </h1>
           <p className="text-[13px] text-text-secondary dark:text-text-secondary mt-1">
             Recurring tasks sent to the Vigilus orchestrator on a schedule. Each run creates a
-            chat session you can review. Times are UTC.
+            chat session you can review. Times are in{' '}
+            <span className="font-medium text-text-primary dark:text-text-primary">{timezone}</span>{' '}
+            (<a href="/settings" className="text-accent hover:underline">change</a>).
           </p>
         </div>
         <button
@@ -297,9 +366,6 @@ export default function Tasks() {
                     </div>
                     <div className="text-[12px] text-text-secondary dark:text-text-secondary mt-0.5 truncate">
                       <span className="font-mono">{task.cron_expression}</span>
-                      {presetLabel(task.cron_expression) && (
-                        <span> — {presetLabel(task.cron_expression)}</span>
-                      )}
                       <span className="mx-1.5">·</span>
                       next: {task.enabled ? formatTime(task.next_run_at) : 'disabled'}
                       <span className="mx-1.5">·</span>
@@ -444,37 +510,108 @@ export default function Tasks() {
                 />
               </div>
 
-              {/* Schedule */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
-                    Schedule (UTC) *
-                  </label>
+              {/* Schedule builder */}
+              <div className="space-y-3">
+                <label className="block text-[12px] font-medium text-text-secondary">
+                  Schedule * <span className="font-normal text-text-secondary/70">({timezone})</span>
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
                   <select
-                    value={form.preset}
-                    onChange={(e) => setForm({ ...form, preset: e.target.value })}
-                    className="input w-full"
+                    value={form.frequency}
+                    onChange={(e) =>
+                      setForm({ ...form, frequency: e.target.value as Frequency })
+                    }
+                    className="input flex-1 min-w-[160px]"
                   >
-                    {CRON_PRESETS.map((p) => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
+                    {FREQUENCY_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
+
+                  {(form.frequency === 'minutes' || form.frequency === 'hours') && (
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[12px] text-text-secondary">every</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={form.frequency === 'minutes' ? 59 : 23}
+                        value={form.interval}
+                        onChange={(e) =>
+                          setForm({ ...form, interval: parseInt(e.target.value, 10) || 1 })
+                        }
+                        className="input w-20"
+                      />
+                      <span className="text-[12px] text-text-secondary">
+                        {form.frequency === 'minutes' ? 'min' : 'hr'}
+                      </span>
+                    </span>
+                  )}
+
+                  {form.frequency === 'weekly' && (
+                    <select
+                      value={form.weekday}
+                      onChange={(e) =>
+                        setForm({ ...form, weekday: parseInt(e.target.value, 10) })
+                      }
+                      className="input min-w-[130px]"
+                    >
+                      {WEEKDAYS.map((d, i) => (
+                        <option key={d} value={i}>{d}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {form.frequency === 'monthly' && (
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[12px] text-text-secondary">on day</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={28}
+                        value={form.dayOfMonth}
+                        onChange={(e) =>
+                          setForm({ ...form, dayOfMonth: parseInt(e.target.value, 10) || 1 })
+                        }
+                        className="input w-20"
+                      />
+                    </span>
+                  )}
+
+                  {(form.frequency === 'daily' ||
+                    form.frequency === 'weekly' ||
+                    form.frequency === 'monthly') && (
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[12px] text-text-secondary">at</span>
+                      <input
+                        type="time"
+                        value={form.time}
+                        onChange={(e) => setForm({ ...form, time: e.target.value })}
+                        className="input w-[120px]"
+                      />
+                    </span>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
-                    Cron expression
-                  </label>
-                  <input
-                    type="text"
-                    value={form.preset === 'custom' ? form.customCron : form.preset}
-                    onChange={(e) => setForm({ ...form, preset: 'custom', customCron: e.target.value })}
-                    placeholder="0 8 * * *"
-                    className="input w-full font-mono"
-                  />
-                  <p className="text-[11px] text-text-secondary/70 mt-1">
-                    minute hour day month weekday
-                  </p>
-                </div>
+
+                {form.frequency === 'custom' && (
+                  <div>
+                    <input
+                      type="text"
+                      value={form.customCron}
+                      onChange={(e) => setForm({ ...form, customCron: e.target.value })}
+                      placeholder="0 8 * * *"
+                      className="input w-full font-mono"
+                    />
+                    <p className="text-[11px] text-text-secondary/70 mt-1">
+                      minute hour day month weekday
+                    </p>
+                  </div>
+                )}
+
+                <p className="text-[12px] text-text-secondary">
+                  {describeSchedule(form, timezone)}
+                  <span className="mx-1.5">·</span>
+                  <span className="font-mono text-text-secondary/80">{buildCron(form) || '—'}</span>
+                </p>
               </div>
 
               {/* Prompt */}

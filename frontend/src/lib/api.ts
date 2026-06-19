@@ -58,6 +58,7 @@ export interface OrchestratorConfig {
   system_prompt: string;
   custom_identity?: string | null;
   soul?: string | null;
+  timezone?: string;
 }
 
 export interface OrchestratorConfigUpdate {
@@ -66,6 +67,7 @@ export interface OrchestratorConfigUpdate {
   system_prompt?: string | null;
   custom_identity?: string | null;
   soul?: string | null;
+  timezone?: string;
 }
 
 // ─── Fetch wrapper ────────────────────────────────────────────────────────────

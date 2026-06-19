@@ -17,6 +17,7 @@ import os
 import structlog
 from dataclasses import dataclass, field, asdict
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from vigilus.config import get_settings
 
@@ -44,6 +45,10 @@ class OrchestratorConfig:
     # soul is a persona blurb appended to the stable identity block.
     soul: str | None = None
 
+    # IANA timezone name (e.g. "America/New_York") used to interpret cron
+    # schedules and to display run times. Defaults to UTC.
+    timezone: str = "UTC"
+
     # Keep system_prompt as a read-only convenience for the API endpoint
     # (returns the rendered prompt).  Not persisted — rebuilt by PromptBuilder.
     system_prompt: str = ""
@@ -54,6 +59,7 @@ class OrchestratorConfig:
             "model": self.model,
             "custom_identity": self.custom_identity,
             "soul": self.soul,
+            "timezone": self.timezone,
             "system_prompt": self.system_prompt,
         }
 
@@ -64,6 +70,7 @@ class OrchestratorConfig:
             model=data.get("model"),
             custom_identity=data.get("custom_identity"),
             soul=data.get("soul"),
+            timezone=data.get("timezone") or "UTC",
             system_prompt=data.get("system_prompt", ""),
         )
 
@@ -93,6 +100,20 @@ def load_orchestrator_config() -> OrchestratorConfig:
 
     _config_cache = OrchestratorConfig()
     return _config_cache
+
+
+def get_app_timezone() -> ZoneInfo:
+    """Return the configured app timezone as a ZoneInfo.
+
+    Falls back to UTC (fail-safe) if the stored value is missing or not a
+    valid IANA zone, logging a warning so the misconfiguration is visible.
+    """
+    name = load_orchestrator_config().timezone or "UTC"
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError) as e:
+        logger.warning("orchestrator.bad_timezone", timezone=name, error=str(e))
+        return ZoneInfo("UTC")
 
 
 class OrchestratorNotConfigured(Exception):

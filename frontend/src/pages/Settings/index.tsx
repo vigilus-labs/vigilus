@@ -1248,6 +1248,73 @@ function SearchTab() {
   );
 }
 
+// Available IANA zones, with a safe fallback for runtimes lacking
+// Intl.supportedValuesOf.
+function listTimezones(): string[] {
+  try {
+    const fn = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] })
+      .supportedValuesOf;
+    if (fn) return fn('timeZone');
+  } catch {
+    // fall through
+  }
+  return ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Berlin', 'Asia/Tokyo'];
+}
+
+function GeneralTab() {
+  const toast = useToast();
+  const [timezone, setTimezone] = useState('UTC');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const zones = listTimezones();
+
+  useEffect(() => {
+    api
+      .getOrchestratorConfig()
+      .then((cfg) => setTimezone(cfg.timezone || 'UTC'))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async (tz: string) => {
+    setTimezone(tz);
+    setSaving(true);
+    try {
+      await api.updateOrchestratorConfig({ timezone: tz });
+      toast('Timezone updated', 'success');
+    } catch (err) {
+      toast(`Failed to update timezone: ${(err as Error).message}`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <div className="text-sm text-text-secondary">Loading…</div>;
+
+  return (
+    <div className="space-y-5 max-w-md">
+      <div className="space-y-1.5">
+        <label className="text-[12px] font-medium text-text-secondary uppercase">Timezone</label>
+        <select
+          value={timezone}
+          disabled={saving}
+          onChange={(e) => save(e.target.value)}
+          className="input w-full"
+        >
+          {!zones.includes(timezone) && <option value={timezone}>{timezone}</option>}
+          {zones.map((z) => (
+            <option key={z} value={z}>{z}</option>
+          ))}
+        </select>
+        <p className="text-[12px] text-text-secondary">
+          Used to interpret scheduled task cron expressions and to display run times.
+          Changing it reschedules all tasks.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('providers');
 
@@ -1345,11 +1412,7 @@ export default function Settings() {
 
             {activeTab === 'providers' && <ProvidersTab />}
             {activeTab === 'credentials' && <CredentialsTab />}
-            {activeTab === 'general' && (
-              <div className="text-sm text-text-secondary">
-                <p>This section will be fully implemented in a future milestone.</p>
-              </div>
-            )}
+            {activeTab === 'general' && <GeneralTab />}
             {activeTab === 'channels' && <ChannelsTab />}
             {activeTab === 'search' && <SearchTab />}
             {activeTab === 'account' && <AccountTab />}

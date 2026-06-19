@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ActivityDrawer } from '@/components/ActivityDrawer';
+import { JitBanner } from '@/components/JitBanner';
 import { useAuth } from '@/lib/auth';
 
 interface NavItem {
@@ -75,6 +76,9 @@ export function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-white dark:bg-bg">
+      {/* App-wide JIT approval banner — floats above all content. */}
+      <JitBanner />
+
       {/* ── Sidebar ─────────────────────────────────────────────── */}
       <aside
         className={cn(

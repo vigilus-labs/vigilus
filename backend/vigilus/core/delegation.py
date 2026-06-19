@@ -103,6 +103,7 @@ async def execute_delegation(
     session_id: str | None = None,
     bridge: Any | None = None,  # StreamBridge from api.sse
     cancel_event: Any | None = None,  # asyncio.Event — stop when set
+    unattended: bool = False,  # scheduled run — use longer JIT wait
 ) -> dict[str, Any]:
     """Execute a delegation to a specialist operator.
 
@@ -206,7 +207,7 @@ async def execute_delegation(
         messages = [LLMMessage(role="user", content=prompt)]
         final_msgs, tool_history = await runtime.run(
             messages, session_id=session_id, max_iterations=10,
-            bridge=bridge, cancel_event=cancel_event,
+            bridge=bridge, cancel_event=cancel_event, unattended=unattended,
         )
 
         # Extract the final response text

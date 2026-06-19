@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from zoneinfo import ZoneInfo
+
 from vigilus.core.scheduler import next_fire_time, validate_cron
 
 
@@ -26,6 +28,16 @@ class TestCronValidation:
     def test_next_fire_time(self):
         assert next_fire_time("0 8 * * *") is not None
         assert next_fire_time("garbage") is None
+
+    def test_next_fire_time_respects_tz(self):
+        # "0 8 * * *" is 8 AM *local* in the given zone, so the reported fire
+        # time stays at hour 8 in that zone but lands on a different absolute
+        # instant than the UTC interpretation.
+        ny = next_fire_time("0 8 * * *", ZoneInfo("America/New_York"))
+        utc = next_fire_time("0 8 * * *", ZoneInfo("UTC"))
+        assert ny is not None and utc is not None
+        assert ny.hour == 8 and utc.hour == 8
+        assert ny.utcoffset() != utc.utcoffset()
 
 
 class TestSchedulesApi:

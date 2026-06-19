@@ -93,6 +93,7 @@ class OperatorRuntime:
         max_iterations: int = 15,
         bridge: Any | None = None,  # StreamBridge from api.sse
         cancel_event: Any | None = None,  # asyncio.Event — stop when set
+        unattended: bool = False,  # scheduled run — use longer JIT wait
     ) -> tuple[list[LLMMessage], list[dict[str, Any]]]:
         """Run the operator loop until a final text response is generated.
 
@@ -191,6 +192,7 @@ class OperatorRuntime:
                         operator=self.operator,
                         session_id=session_id,
                         jit_token=jit_token,
+                        unattended=unattended,
                     )
 
                     tool_output = result.output if result.success else f"Error: {result.error}"

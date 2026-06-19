@@ -48,17 +48,27 @@ class ToolRegistry:
         session_id: str | None = None,
         jit_token: str | None = None,
         jit_wait_seconds: int | None = None,
+        unattended: bool = False,
     ) -> ToolResult:
         """Execute a tool invocation.
 
         When a call is denied under strict trust, execution pauses for up to
         ``jit_wait_seconds`` (default from settings) while the user approves
         or denies the JIT request, then proceeds or aborts accordingly.
+
+        ``unattended`` (scheduled-task runs) selects the longer JIT wait window
+        so a human notified by the global banner has time to approve. It never
+        widens or auto-grants the permission — only the wait timeout differs.
         """
         from vigilus.config import get_settings
 
         if jit_wait_seconds is None:
-            jit_wait_seconds = get_settings().jit_wait_seconds
+            settings = get_settings()
+            jit_wait_seconds = (
+                settings.jit_wait_seconds_unattended
+                if unattended
+                else settings.jit_wait_seconds
+            )
         start_time = time.time()
 
         # LLMs pass JIT tokens inside the tool arguments (per the denial

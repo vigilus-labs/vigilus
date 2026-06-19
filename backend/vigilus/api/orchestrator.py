@@ -20,6 +20,7 @@ class OrchestratorConfigResponse(BaseModel):
     system_prompt: str
     custom_identity: str | None = None
     soul: str | None = None
+    timezone: str = "UTC"
 
 
 class OrchestratorConfigUpdate(BaseModel):
@@ -28,6 +29,7 @@ class OrchestratorConfigUpdate(BaseModel):
     system_prompt: str | None = None
     custom_identity: str | None = None
     soul: str | None = None
+    timezone: str | None = None
 
 
 @router.get("", response_model=OrchestratorConfigResponse)
@@ -63,6 +65,18 @@ async def update_orchestrator_config(data: OrchestratorConfigUpdate, db: AsyncSe
     if data.soul is not None:
         cfg.soul = data.soul if data.soul else None
 
+    tz_changed = False
+    if data.timezone is not None:
+        tz = data.timezone or "UTC"
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(tz)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise HTTPException(status_code=422, detail=f"Invalid timezone: {tz}")
+        tz_changed = tz != cfg.timezone
+        cfg.timezone = tz
+
     # system_prompt is now built dynamically — accept but store as custom_identity
     # if the user explicitly sets it via the old API field.
     if data.system_prompt is not None:
@@ -72,4 +86,12 @@ async def update_orchestrator_config(data: OrchestratorConfigUpdate, db: AsyncSe
             cfg.custom_identity = data.system_prompt
 
     save_orchestrator_config(cfg)
+
+    # A timezone change re-interprets every cron schedule, so refresh the
+    # running scheduler's jobs and recompute next-run times.
+    if tz_changed:
+        from vigilus.core.scheduler import get_scheduler
+
+        await get_scheduler().reschedule_all()
+
     return OrchestratorConfigResponse(**cfg.to_dict())

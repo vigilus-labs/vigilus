@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Bot, User, Wrench, MessageSquare, Trash2, Settings, Activity, Zap, Cpu, CheckCircle2, AlertCircle, KeyRound, Pencil, X, Brain, AtSign, Square, Loader2, ListChecks, Terminal, Share2, Search, Globe } from 'lucide-react';
+import { Send, Bot, User, Wrench, MessageSquare, Trash2, Settings, Activity, Zap, Cpu, CheckCircle2, AlertCircle, KeyRound, Pencil, X, Brain, AtSign, Square, Loader2, ListChecks, Terminal, Share2, Search, Globe, CalendarClock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { MemoryPanel } from '@/components/MemoryPanel';
 import { JitGrantControls, JitGrantOpts } from '@/components/JitGrantControls';
@@ -32,16 +32,29 @@ const EXTERNAL_LABELS: Record<string, string> = {
 };
 
 // A session is "external" when it originated from a third-party channel
-// (Telegram, Discord, or any future integration). Web and scheduled chats —
-// and legacy sessions with no origin — are treated as internal "App" chats.
+// (Telegram, Discord, or any future integration).
 const isExternalSession = (s: Session): boolean =>
   !!s.origin && s.origin !== 'web' && s.origin !== 'schedule';
+
+// Scheduled-task runs get their own "Tasks" tab.
+const isScheduledSession = (s: Session): boolean => s.origin === 'schedule';
+
+type ChatTab = 'app' | 'channels' | 'tasks';
+
+// Which sidebar tab a session belongs to. App = web/legacy chats (everything
+// that isn't a channel or a scheduled run).
+const matchesTab = (s: Session, tab: ChatTab): boolean =>
+  tab === 'channels'
+    ? isExternalSession(s)
+    : tab === 'tasks'
+      ? isScheduledSession(s)
+      : !isExternalSession(s) && !isScheduledSession(s);
 
 export default function Chat() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   // Which group of chats the sidebar shows: in-app chats vs. third-party channels.
-  const [chatTab, setChatTab] = useState<'app' | 'channels'>('app');
+  const [chatTab, setChatTab] = useState<ChatTab>('app');
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -244,9 +257,7 @@ export default function Chat() {
       const sess = await api.listSessions();
       setSessions(sess);
       if (!activeSession) {
-        const first = sess.find(s =>
-          chatTab === 'channels' ? isExternalSession(s) : !isExternalSession(s),
-        );
+        const first = sess.find(s => matchesTab(s, chatTab));
         if (first) selectSession(first);
       }
     } catch (err) {
@@ -294,14 +305,12 @@ export default function Chat() {
     }
   };
 
-  // Switch between the "App" and "Channels" chat groups. If the currently
-  // active session isn't part of the target group, jump to the first one that
-  // is (or clear the view when the group is empty).
-  const switchTab = (tab: 'app' | 'channels') => {
+  // Switch between the "App", "Channels", and "Tasks" chat groups. If the
+  // currently active session isn't part of the target group, jump to the first
+  // one that is (or clear the view when the group is empty).
+  const switchTab = (tab: ChatTab) => {
     setChatTab(tab);
-    const inTab = sessions.filter(s =>
-      tab === 'channels' ? isExternalSession(s) : !isExternalSession(s),
-    );
+    const inTab = sessions.filter(s => matchesTab(s, tab));
     if (!activeSession || !inTab.some(s => s.id === activeSession.id)) {
       if (inTab.length > 0) {
         selectSession(inTab[0]);
@@ -801,11 +810,10 @@ export default function Chat() {
     }
   };
 
-  const appCount = sessions.filter(s => !isExternalSession(s)).length;
+  const appCount = sessions.filter(s => matchesTab(s, 'app')).length;
   const channelCount = sessions.filter(s => isExternalSession(s)).length;
-  const visibleSessions = sessions.filter(s =>
-    chatTab === 'channels' ? isExternalSession(s) : !isExternalSession(s),
-  );
+  const taskCount = sessions.filter(s => isScheduledSession(s)).length;
+  const visibleSessions = sessions.filter(s => matchesTab(s, chatTab));
 
   return (
     <div className="flex h-full overflow-hidden bg-white dark:bg-surface">
@@ -836,6 +844,17 @@ export default function Chat() {
               <Share2 className="w-3.5 h-3.5" />
               Channels{channelCount > 0 ? ` (${channelCount})` : ''}
             </button>
+            <button
+              onClick={() => switchTab('tasks')}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[12px] rounded transition-colors ${
+                chatTab === 'tasks'
+                  ? 'bg-white dark:bg-bg text-text-primary dark:text-text-primary shadow-sm font-medium'
+                  : 'text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              <CalendarClock className="w-3.5 h-3.5" />
+              Tasks{taskCount > 0 ? ` (${taskCount})` : ''}
+            </button>
           </div>
         </div>
 
@@ -849,17 +868,26 @@ export default function Chat() {
               New Chat
             </button>
           </div>
-        ) : (
+        ) : chatTab === 'channels' ? (
           <div className="px-3 pt-3 pb-1 text-[11px] text-text-secondary/70 leading-relaxed">
             Chats from Telegram &amp; Discord appear here. Start one by messaging
             the bot from that platform.
+          </div>
+        ) : (
+          <div className="px-3 pt-3 pb-1 text-[11px] text-text-secondary/70 leading-relaxed">
+            Each scheduled task run creates a session here. Manage schedules on the{' '}
+            <a href="/tasks" className="text-accent hover:underline">Tasks</a> page.
           </div>
         )}
 
         <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
           {visibleSessions.length === 0 && (
             <div className="px-3 py-6 text-center text-[12px] text-text-secondary/50">
-              {chatTab === 'channels' ? 'No channel chats yet.' : 'No chats yet.'}
+              {chatTab === 'channels'
+                ? 'No channel chats yet.'
+                : chatTab === 'tasks'
+                  ? 'No task runs yet.'
+                  : 'No chats yet.'}
             </div>
           )}
           {visibleSessions.map(sess => (

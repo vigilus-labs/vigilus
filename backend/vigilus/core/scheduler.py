@@ -14,11 +14,13 @@ running scheduler in step with the DB.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from vigilus.core.orchestrator import get_app_timezone
 from vigilus.db.base import get_session_factory
 from vigilus.db.models import ScheduledTask, Session
 
@@ -34,11 +36,12 @@ def validate_cron(expression: str) -> str | None:
         return str(e)
 
 
-def next_fire_time(expression: str) -> datetime | None:
-    """Compute the next fire time for a cron expression (server-local tz)."""
+def next_fire_time(expression: str, tz: ZoneInfo | None = None) -> datetime | None:
+    """Compute the next fire time for a cron expression in *tz* (app tz by default)."""
+    tz = tz or get_app_timezone()
     try:
-        trigger = CronTrigger.from_crontab(expression)
-        return trigger.get_next_fire_time(None, datetime.now(UTC))
+        trigger = CronTrigger.from_crontab(expression, timezone=tz)
+        return trigger.get_next_fire_time(None, datetime.now(tz))
     except (ValueError, TypeError):
         return None
 
@@ -99,8 +102,36 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
             "task": task.name,
         })
 
+        # Wire the run to the same live-activity plumbing the chat page uses, so
+        # a scheduled run can be watched and reviewed on /chat (under the Tasks
+        # tab), and any JIT request it raises is forwarded into the session
+        # stream as well as the global banner.
+        from vigilus.api.sse import (
+            EVT_DELEGATION_RESULT,
+            EVT_DELEGATION_START,
+            EVT_DONE,
+            EVT_ERROR,
+            EVT_JIT_REQUEST,
+            EVT_TEXT_DELTA,
+            EVT_THINKING,
+            EVT_TOOL_CALL,
+            EVT_TOOL_RESULT,
+            StreamBridge,
+            register_bridge,
+            unregister_bridge,
+        )
+        from vigilus.core.tasks import get_task_registry
+
+        activity_events = {
+            EVT_THINKING, EVT_DELEGATION_START, EVT_TOOL_CALL, EVT_TOOL_RESULT,
+            EVT_DELEGATION_RESULT, EVT_TEXT_DELTA, EVT_ERROR,
+        }
+
         result: dict
         chat_session_id: str | None = None
+        bridge: StreamBridge | None = None
+        running_task = None
+        forward_jit = None
         try:
             # Fresh chat session per run so the user can review the full
             # delegation transcript on the /chat page.
@@ -130,10 +161,29 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
                 f"Complete the task and produce a final report.\n\n{prompt_text}"
             )
 
+            # Register the run so its activity is buffered and a client opening
+            # the session mid-run can restore + follow it live.
+            running_task = get_task_registry().register(chat_session.id, chat_session.title)
+
+            def _record_activity(event: str, data: dict) -> None:
+                if event in activity_events:
+                    get_task_registry().record(chat_session.id, event, data)
+
+            bridge = StreamBridge(on_event=_record_activity)
+            register_bridge(chat_session.id, bridge)
+
+            async def _forward_jit(payload: dict) -> None:
+                bridge.publish(EVT_JIT_REQUEST, payload or {})
+
+            forward_jit = _forward_jit
+            event_bus.subscribe("jit.requested", forward_jit)
+
             from vigilus.core.turn import run_turn
 
             final_text = await run_turn(
                 db, chat_session, framed, auto_title=False,
+                bridge=bridge, cancel_event=running_task.cancel_event,
+                unattended=True,
             )
 
             result = {
@@ -146,6 +196,16 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
         except Exception as e:
             logger.exception("scheduler.task_failed", name=task.name, error=str(e))
             result = {"status": "error", "error": str(e), "session_id": chat_session_id}
+        finally:
+            if forward_jit is not None:
+                event_bus.unsubscribe("jit.requested", forward_jit)
+            if chat_session_id is not None:
+                get_task_registry().unregister(chat_session_id)
+                if bridge is not None:
+                    # Resolve any live SSE viewer's stream cleanly before close.
+                    bridge.publish(EVT_DONE, {"session_id": chat_session_id})
+                    bridge.close()
+                unregister_bridge(chat_session_id)
 
         # Persist the outcome on the task row (re-fetch: session state may be stale)
         task = await db.get(ScheduledTask, task_id)
@@ -190,11 +250,15 @@ class SchedulerEngine:
         """Start the scheduler and register all enabled tasks from the DB."""
         if self.running:
             return
-        self._scheduler = AsyncIOScheduler(timezone="UTC")
+        self._scheduler = AsyncIOScheduler(timezone=get_app_timezone())
         self._scheduler.start()
+        await self._load_enabled_tasks()
 
+    async def _load_enabled_tasks(self) -> None:
+        """Register every enabled task and recompute its next-run time."""
         from sqlalchemy import select
 
+        tz = get_app_timezone()
         factory = get_session_factory()
         async with factory() as db:
             tasks = (await db.execute(
@@ -202,10 +266,22 @@ class SchedulerEngine:
             )).scalars().all()
             for task in tasks:
                 self._register(task)
-                task.next_run_at = next_fire_time(task.cron_expression)
+                task.next_run_at = next_fire_time(task.cron_expression, tz)
             await db.commit()
 
-        logger.info("scheduler.started", task_count=len(tasks))
+        logger.info("scheduler.loaded", task_count=len(tasks), timezone=str(tz))
+
+    async def reschedule_all(self) -> None:
+        """Re-register all enabled tasks (e.g. after the app timezone changes)."""
+        if not self.running:
+            return
+        assert self._scheduler is not None
+        # Each job carries its own trigger timezone, so re-registering with
+        # fresh CronTriggers is enough — no need to reconfigure the running
+        # scheduler's default tz (which would raise while it's running).
+        for job in self._scheduler.get_jobs():
+            job.remove()
+        await self._load_enabled_tasks()
 
     async def shutdown(self) -> None:
         if self._scheduler:
@@ -218,7 +294,7 @@ class SchedulerEngine:
         assert self._scheduler is not None
         self._scheduler.add_job(
             execute_scheduled_task,
-            CronTrigger.from_crontab(task.cron_expression, timezone="UTC"),
+            CronTrigger.from_crontab(task.cron_expression, timezone=get_app_timezone()),
             args=[task.id],
             id=task.id,
             name=task.name,
