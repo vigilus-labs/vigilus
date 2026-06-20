@@ -116,6 +116,7 @@ All settings are configurable via environment variables with the `VIGILUS_` pref
 | `VIGILUS_SEARXNG_URL` | *(none)* | SearXNG base URL, e.g. `http://searxng.lan:8080` |
 | `VIGILUS_FIRECRAWL_API_KEY` | *(none)* | Firecrawl key (DB config wins; encrypted at rest) |
 | `VIGILUS_WEB_FETCH_ALLOW_PRIVATE` | `false` | Allow fetching internal/LAN URLs (off = SSRF-safe) |
+| `VIGILUS_UPDATE_CHECK` | `true` | Check GitHub releases for a newer version (set `false` to disable the outbound call) |
 
 > **Web research** is performed by the Vigilus orchestrator only — operators
 > never get `web_search`/`web_fetch`. Configure it under **Settings → Search**

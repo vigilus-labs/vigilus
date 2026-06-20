@@ -19,6 +19,22 @@ async def health_check() -> dict:
     return {"status": "ok", "version": __version__}
 
 
+@router.get("/system/update")
+async def update_status() -> dict:
+    """Report whether a newer Vigilus release is available (cached)."""
+    from vigilus.core.updates import get_update_status
+
+    return await get_update_status()
+
+
+@router.post("/system/update/check")
+async def update_check() -> dict:
+    """Force a fresh check against the release server, bypassing the cache."""
+    from vigilus.core.updates import get_update_status
+
+    return await get_update_status(force=True)
+
+
 @router.get("/system/status")
 async def system_status(db: AsyncSession = Depends(get_db)) -> dict:
     """Extended readiness check including database connectivity."""

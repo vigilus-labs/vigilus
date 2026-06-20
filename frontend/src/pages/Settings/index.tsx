@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Key, Sliders, Database, Plus, Trash2, Edit2, CheckCircle, XCircle, RefreshCw, Search, UserCog, Radio } from 'lucide-react';
+import { Key, Sliders, Database, Plus, Trash2, Edit2, CheckCircle, XCircle, RefreshCw, Search, UserCog, Radio, ArrowUpCircle, ExternalLink } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useToast, useConfirm } from '../../components/Notifications';
-import { Provider, ProviderType, Credential, CredentialType, SshAuthMethod, ChannelConfig, ChannelAccount, ChannelPlatform } from '../../types';
+import { Provider, ProviderType, Credential, CredentialType, SshAuthMethod, ChannelConfig, ChannelAccount, ChannelPlatform, UpdateStatus } from '../../types';
 
 const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
   { value: 'anthropic', label: 'Anthropic' },
@@ -1261,6 +1261,103 @@ function listTimezones(): string[] {
   return ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Berlin', 'Asia/Tokyo'];
 }
 
+function AboutSection() {
+  const toast = useToast();
+  const [status, setStatus] = useState<UpdateStatus | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    api.getUpdateStatus().then(setStatus).catch(() => {});
+  }, []);
+
+  const recheck = async () => {
+    setChecking(true);
+    try {
+      const s = await api.checkForUpdate();
+      setStatus(s);
+      if (s.error) toast(s.error, 'error');
+      else if (s.update_available) toast(`Vigilus ${s.latest_version} is available`, 'success');
+      else toast("You're on the latest version", 'success');
+    } catch (err) {
+      toast(`Update check failed: ${(err as Error).message}`, 'error');
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 pt-6 border-t border-border">
+      <div className="flex items-center justify-between">
+        <label className="text-[12px] font-medium text-text-secondary uppercase">About</label>
+        {status?.check_enabled && (
+          <button
+            onClick={recheck}
+            disabled={checking}
+            className="inline-flex items-center gap-1.5 text-[12px] text-accent hover:underline disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${checking ? 'animate-spin' : ''}`} />
+            Check for updates
+          </button>
+        )}
+      </div>
+
+      <div className="rounded-card border border-border bg-surface px-4 py-3 space-y-2">
+        <div className="flex items-center justify-between text-[13px]">
+          <span className="text-text-secondary">Version</span>
+          <span className="font-mono text-text-primary">{status?.current_version ?? '—'}</span>
+        </div>
+
+        {status && !status.check_enabled && (
+          <p className="text-[12px] text-text-secondary">
+            Update checking is disabled (<code>VIGILUS_UPDATE_CHECK=false</code>).
+          </p>
+        )}
+
+        {status?.check_enabled && status.update_available && (
+          <div className="flex items-start gap-2 pt-1 text-[13px]">
+            <ArrowUpCircle className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <div className="text-text-primary font-medium">
+                Update available: {status.latest_version}
+              </div>
+              {status.release_url && (
+                <a
+                  href={status.release_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[12px] text-accent hover:underline"
+                >
+                  Release notes <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+              <div className="mt-1.5 text-[12px] text-text-secondary">
+                Pull the new image:
+                <code className="block mt-1 px-2 py-1 rounded bg-bg text-text-primary overflow-x-auto">
+                  docker pull {status.image}:v{status.latest_version}
+                </code>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {status?.check_enabled && !status.update_available && !status.error && (
+          <div className="flex items-center gap-2 text-[13px] text-text-secondary">
+            <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+            You're on the latest version.
+          </div>
+        )}
+
+        {status?.error && (
+          <div className="flex items-center gap-2 text-[12px] text-text-secondary">
+            <XCircle className="w-4 h-4 text-amber-500 shrink-0" />
+            {status.error}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function GeneralTab() {
   const toast = useToast();
   const [timezone, setTimezone] = useState('UTC');
@@ -1311,6 +1408,8 @@ function GeneralTab() {
           Changing it reschedules all tasks.
         </p>
       </div>
+
+      <AboutSection />
     </div>
   );
 }

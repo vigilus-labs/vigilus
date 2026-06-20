@@ -90,6 +90,13 @@ class Settings(BaseSettings):
     web_fetch_allow_private: bool = False        # block RFC1918/loopback/metadata
     web_fetch_allowed_schemes: list[str] = ["http", "https"]
 
+    # ── Updates ─────────────────────────────────────────────
+    # Outbound check against the published GitHub releases. Opt-out for
+    # privacy; the only network call is an unauthenticated GET to api.github.com.
+    update_check_enabled: bool = Field(default=True, validation_alias="VIGILUS_UPDATE_CHECK")
+    update_repo: str = "vigilus-labs/vigilus"        # owner/name for releases + GHCR image
+    update_check_interval_hours: int = 6             # in-process cache TTL
+
     # ── Logging ─────────────────────────────────────────────
     log_level: str = "INFO"
 
