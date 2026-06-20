@@ -50,6 +50,7 @@ import type {
   ScopeNetworkRoleUpdate,
   ScopeSegment,
   ScopeSegmentUpdate,
+  UpdateStatus,
 } from '@/types';
 
 export interface OrchestratorConfig {
@@ -406,6 +407,16 @@ class ApiClient {
   
   getMetrics() {
     return this.get<any>('/system/metrics');
+  }
+
+  // ─── Updates ────────────────────────────────────────────────────────
+
+  getUpdateStatus() {
+    return this.get<UpdateStatus>('/system/update');
+  }
+
+  checkForUpdate() {
+    return this.post<UpdateStatus>('/system/update/check');
   }
 
   // ─── Scheduled Tasks ────────────────────────────────────

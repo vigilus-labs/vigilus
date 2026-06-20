@@ -24,6 +24,7 @@ import {
 import { cn } from '@/lib/utils';
 import { ActivityDrawer } from '@/components/ActivityDrawer';
 import { JitBanner } from '@/components/JitBanner';
+import { UpdateBanner } from '@/components/UpdateBanner';
 import { useAuth } from '@/lib/auth';
 
 interface NavItem {
@@ -78,6 +79,9 @@ export function Layout() {
     <div className="flex h-screen overflow-hidden bg-white dark:bg-bg">
       {/* App-wide JIT approval banner — floats above all content. */}
       <JitBanner />
+
+      {/* App-wide "update available" banner — floats bottom-right. */}
+      <UpdateBanner />
 
       {/* ── Sidebar ─────────────────────────────────────────────── */}
       <aside

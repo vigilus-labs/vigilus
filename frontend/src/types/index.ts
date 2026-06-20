@@ -345,6 +345,19 @@ export interface ApiError {
   status_code: number;
 }
 
+export interface UpdateStatus {
+  current_version: string;
+  latest_version: string | null;
+  update_available: boolean;
+  release_url: string | null;
+  release_name: string | null;
+  published_at: string | null;
+  checked_at: string | null;
+  check_enabled: boolean;
+  image: string;
+  error: string | null;
+}
+
 // ─── WebSocket Events ─────────────────────────────────────────────────────────
 
 export type WsEventType =
