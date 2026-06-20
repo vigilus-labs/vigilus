@@ -306,6 +306,28 @@ fetch_source() {
 
 # ── Python venv + backend ─────────────────────────────────────────────────────
 
+# Ensure the stdlib venv/ensurepip support is installed for $PYTHON_BIN. The base
+# python3 on Debian/Ubuntu ships without ensurepip — it lives in the matching
+# pythonX.Y-venv package — so `python -m venv` would otherwise build a venv with
+# no pip. (RHEL/Arch/macOS bundle ensurepip, so this is a no-op there.)
+ensure_venv_module() {
+    "$PYTHON_BIN" -m ensurepip --version >/dev/null 2>&1 && return 0
+
+    case "$PKG_MGR" in
+        apt)
+            pyver=$("$PYTHON_BIN" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null)
+            if [ -n "$pyver" ] && apt-cache show "python${pyver}-venv" >/dev/null 2>&1; then
+                pkg_install "python${pyver}-venv"
+            else
+                pkg_install python3-venv
+            fi
+            ;;
+        zypper)
+            pkg_install python3-venv >/dev/null 2>&1 || true
+            ;;
+    esac
+}
+
 setup_backend() {
     step "Setting up Python backend"
 
@@ -313,9 +335,20 @@ setup_backend() {
     PIP="$VENV_DIR/bin/pip"
     VIGILUS_BIN="$VENV_DIR/bin/vigilus"
 
+    # A venv that exists but has no pip was built by a prior run before
+    # ensurepip/python3-venv was available. Reusing it is what breaks the
+    # install, so detect and rebuild it rather than trusting the directory.
+    if [ -d "$VENV_DIR" ] && [ ! -x "$PIP" ]; then
+        info "Existing virtual environment is missing pip — rebuilding it..."
+        $SUDO rm -rf "$VENV_DIR"
+    fi
+
     if [ ! -d "$VENV_DIR" ]; then
+        ensure_venv_module
         info "Creating virtual environment..."
-        "$PYTHON_BIN" -m venv "$VENV_DIR"
+        if ! "$PYTHON_BIN" -m venv "$VENV_DIR" || [ ! -x "$PIP" ]; then
+            die "Failed to create a working virtualenv. Install the venv module for your Python (e.g. 'sudo apt-get install python3-venv') and re-run."
+        fi
     fi
 
     info "Installing backend dependencies (this may take a minute)..."
