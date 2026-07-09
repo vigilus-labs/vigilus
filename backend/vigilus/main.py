@@ -9,9 +9,40 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
+from starlette.types import Scope
 
 from vigilus import __version__
 from vigilus.config import get_settings
+
+
+class SpaStaticFiles(StaticFiles):
+    """StaticFiles with history-API fallback for the built SPA.
+
+    A hard refresh on a client-side route (e.g. /chat, /servers) reaches this
+    mount with a path that has no matching file; plain StaticFiles turns that
+    into a 404 ({"detail": "Not Found"}). Serve index.html instead so the React
+    router can take over. API paths and asset-like paths (last segment contains
+    a dot, e.g. stale hashed bundles) still 404 normally.
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        try:
+            response = await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404 or not self._should_fallback(path):
+                raise
+            return await super().get_response("index.html", scope)
+        if response.status_code == 404 and self._should_fallback(path):
+            return await super().get_response("index.html", scope)
+        return response
+
+    @staticmethod
+    def _should_fallback(path: str) -> bool:
+        if path == "api" or path.startswith("api/"):
+            return False
+        return "." not in path.rsplit("/", 1)[-1]
 
 
 def _configure_logging() -> None:
@@ -253,7 +284,7 @@ def create_app() -> FastAPI:
     # ── Static files (production SPA) ───────────────────────
     frontend_dir = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
     if os.path.isdir(frontend_dir):
-        app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+        app.mount("/", SpaStaticFiles(directory=frontend_dir, html=True), name="frontend")
 
     return app
 

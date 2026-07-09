@@ -1212,7 +1212,12 @@ export default function Chat() {
                     )}
                   </div>
                 ) : (
-                  messages.map((msg, i) => (
+                  messages
+                    // Skip bubbles with nothing to show — e.g. an assistant
+                    // message whose only content was the (stripped) delegation
+                    // JSON renders as an empty box otherwise.
+                    .filter(msg => renderMessageContent(msg.content).trim().length > 0)
+                    .map((msg, i) => (
                     <div key={msg.id || i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       <div className={`flex max-w-[85%] gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${

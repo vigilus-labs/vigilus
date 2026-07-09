@@ -291,6 +291,13 @@ async def _run_orchestrator(
     delegations_used = 0
     max_iterations = max_delegations + 6
 
+    # Some models (reasoning models especially) occasionally return an empty
+    # final message — e.g. the whole token budget went to reasoning. Track the
+    # last delegation result so we can retry once and then fall back to it
+    # instead of persisting an empty reply.
+    empty_retry_used = False
+    last_result_summary: str | None = None
+
     while iteration < max_iterations:
         iteration += 1
         if cancel_event is not None and cancel_event.is_set():
@@ -387,12 +394,41 @@ async def _run_orchestrator(
         # user sees just the orchestrator's plain-text plan ("here's what I'll
         # do …"), which renders immediately while the operator works.
         visible_text = strip_delegation(response_text) if delegation else response_text
-        await _publish_text(visible_text)
 
         if delegation is None:
             # Final response — no delegation
-            new_messages.append({"role": "assistant", "content": visible_text})
+            final_text = visible_text.strip()
+            if not final_text:
+                if not empty_retry_used:
+                    empty_retry_used = True
+                    logger.warning("orchestrator.empty_response", iteration=iteration)
+                    history.append(LLMMessage(
+                        role="user",
+                        content=(
+                            "[SYSTEM] Your previous reply was empty. Reply now with "
+                            "your final answer for the user as plain text — summarize "
+                            "what was done and the results. Do not delegate again."
+                        ),
+                    ))
+                    continue
+                # Still empty after a retry — surface the last operator report
+                # rather than persisting a blank message.
+                logger.warning("orchestrator.empty_response_fallback")
+                if last_result_summary:
+                    final_text = (
+                        "I couldn't generate a closing summary, so here is the "
+                        "operator's report directly:\n\n" + last_result_summary
+                    )
+                else:
+                    final_text = (
+                        "⚠️ The model returned an empty reply. Please try again "
+                        "or rephrase your request."
+                    )
+            await _publish_text(final_text)
+            new_messages.append({"role": "assistant", "content": final_text})
             break
+
+        await _publish_text(visible_text)
 
         # Delegation found — save the assistant message and execute it
         operator_name = delegation.get("delegate") or delegation.get("operator")
@@ -445,6 +481,7 @@ async def _run_orchestrator(
 
         # Format delegation result for the orchestrator
         result_summary = _format_delegation_result(delegation_result)
+        last_result_summary = result_summary
 
         if bridge:
             bridge.publish(EVT_DELEGATION_RESULT, {
