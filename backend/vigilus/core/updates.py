@@ -6,8 +6,9 @@ release and reports whether a newer version is available.
 
 The check is a single outbound, unauthenticated GET to api.github.com. It is
 opt-out (``VIGILUS_UPDATE_CHECK=false``) and the result is cached in-process so
-we never hammer GitHub's rate limit. Vigilus cannot self-update a container, so
-the report only points the operator at the release notes + pull command.
+we never hammer GitHub's rate limit. Applying the update is out of scope here:
+git-managed installs run ``vigilus update`` (see ``cli.cmd_update``), Docker
+installs pull the newer image.
 """
 
 from __future__ import annotations

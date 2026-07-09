@@ -65,7 +65,7 @@ export function UpdateBanner() {
                 </a>
               )}
               <code className="text-[11px] text-text-secondary truncate">
-                {status.image}:v{status.latest_version}
+                vigilus update
               </code>
             </div>
           </div>

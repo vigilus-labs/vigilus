@@ -166,6 +166,23 @@ All settings are configurable via environment variables with the `VIGILUS_` pref
 
 ## Administration
 
+### Updating
+
+Installs created by `install.sh` can update themselves:
+
+```bash
+vigilus update            # pull the latest code, rebuild, migrate, restart
+vigilus update --check    # just report whether an update is available
+```
+
+The update pulls the latest commit from GitHub, reinstalls backend
+dependencies, rebuilds the web UI, applies database migrations, and restarts
+the service (systemd or launchd). Local modifications to tracked files abort
+the update unless you pass `--force`, which discards them. Your `.env` and
+`data/` directory are never touched.
+
+For Docker installs, pull the newer image and recreate the container instead.
+
 ### Password Reset
 
 Password reset requires shell access to the server. Run the appropriate command, then log in with the new password.
