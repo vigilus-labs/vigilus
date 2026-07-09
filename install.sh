@@ -708,11 +708,13 @@ print_success() {
     printf '  %s\n' "$(_bold 'Useful commands:')"
 
     if [ "$OS" = "linux" ] && command -v systemctl >/dev/null 2>&1; then
+        printf '    %-32s%s\n' "Update:"          "vigilus update"
         printf '    %-32s%s\n' "Service status:"  "systemctl status vigilus"
         printf '    %-32s%s\n' "View logs:"       "journalctl -u vigilus -f"
         printf '    %-32s%s\n' "Restart:"         "systemctl restart vigilus"
         printf '    %-32s%s\n' "Stop:"            "systemctl stop vigilus"
     elif [ "$OS" = "macos" ]; then
+        printf '    %-32s%s\n' "Update:"          "vigilus update"
         printf '    %-32s%s\n' "View logs:"       "tail -f ~/Library/Logs/vigilus/vigilus.log"
         printf '    %-32s%s\n' "Restart:"         "launchctl kickstart -k gui/\$(id -u)/dev.vigilus"
         printf '    %-32s%s\n' "Stop:"            "launchctl unload ~/Library/LaunchAgents/dev.vigilus.plist"

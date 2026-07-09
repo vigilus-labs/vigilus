@@ -1,4 +1,4 @@
-"""Vigilus CLI – init, start, and chat commands."""
+"""Vigilus CLI – init, start, update, chat, and admin commands."""
 
 from __future__ import annotations
 
@@ -288,6 +288,204 @@ def cmd_channels(args: argparse.Namespace) -> None:
     asyncio.run(_run())
 
 
+def _install_root():
+    """Root of the git-managed install (the directory containing backend/)."""
+    from pathlib import Path
+
+    return Path(__file__).resolve().parent.parent.parent
+
+
+def _service_restart_plan(platform: str | None = None, exists=os.path.exists):
+    """How to restart the Vigilus service on this host, mirroring what
+    install.sh sets up. Returns (description, argv, fallback_hint) or None
+    when no managed service is found.
+    """
+    platform = platform or sys.platform
+    home = os.path.expanduser("~")
+    if platform == "darwin":
+        if exists(os.path.join(home, "Library/LaunchAgents/dev.vigilus.plist")):
+            return (
+                "launchd service dev.vigilus",
+                ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/dev.vigilus"],
+                None,
+            )
+        return None
+    if exists("/etc/systemd/system/vigilus.service"):
+        # The CLI wrapper may be running as the unprivileged service user,
+        # which can't restart system units — hence the sudo fallback hint.
+        return (
+            "systemd service vigilus",
+            ["systemctl", "restart", "vigilus"],
+            "sudo systemctl restart vigilus",
+        )
+    if exists(os.path.join(home, ".config/systemd/user/vigilus.service")):
+        return (
+            "user systemd service vigilus",
+            ["systemctl", "--user", "restart", "vigilus"],
+            None,
+        )
+    return None
+
+
+def _update_backend_deps(backend_dir) -> None:
+    import subprocess
+
+    print("Installing backend dependencies...")
+    res = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "-e", str(backend_dir)])
+    if res.returncode != 0:
+        print("ERROR: backend dependency install failed (see output above).", file=sys.stderr)
+        sys.exit(1)
+
+
+def _rebuild_frontend(frontend_dir) -> None:
+    import shutil
+    import subprocess
+
+    if not (frontend_dir / "package.json").exists():
+        return
+    npm = shutil.which("npm")
+    if npm is None:
+        print(
+            "⚠ npm not found — skipping the frontend rebuild. The web UI will keep "
+            "serving the previous build until you run "
+            f"'npm --prefix {frontend_dir} install && npm --prefix {frontend_dir} run build'.",
+            file=sys.stderr,
+        )
+        return
+    print("Building frontend...")
+    for step in (["install", "--silent"], ["run", "build", "--silent"]):
+        res = subprocess.run([npm, "--prefix", str(frontend_dir), *step])
+        if res.returncode != 0:
+            print("ERROR: frontend build failed (see output above).", file=sys.stderr)
+            sys.exit(1)
+
+
+def _run_migrations(backend_dir) -> None:
+    import subprocess
+
+    print("Applying database migrations...")
+    # Fresh interpreter so the just-updated code (models, migration scripts)
+    # is what runs — this process still has the old version imported.
+    res = subprocess.run(
+        [sys.executable, "-m", "alembic", "-c", str(backend_dir / "alembic.ini"), "upgrade", "head"],
+        cwd=str(backend_dir),
+    )
+    if res.returncode != 0:
+        print("ERROR: database migration failed (see output above).", file=sys.stderr)
+        sys.exit(1)
+
+
+def _restart_service() -> None:
+    import subprocess
+
+    plan = _service_restart_plan()
+    if plan is None:
+        print("✓ Update complete. Restart Vigilus to run the new version.")
+        return
+    description, argv, fallback_hint = plan
+    res = subprocess.run(argv, capture_output=True, text=True)
+    if res.returncode == 0:
+        print(f"✓ Restarted {description}.")
+        return
+    detail = (res.stderr or res.stdout).strip()
+    print(f"⚠ Could not restart {description}: {detail}", file=sys.stderr)
+    if fallback_hint:
+        print(f"  Restart it yourself with: {fallback_hint}", file=sys.stderr)
+
+
+def cmd_update(args: argparse.Namespace) -> None:
+    """Update a git-managed install to the latest version from GitHub."""
+    import re
+    import subprocess
+
+    root = _install_root()
+    backend_dir = root / "backend"
+
+    if not (root / ".git").exists():
+        print(
+            "ERROR: this Vigilus install is not managed by git, so it can't self-update.\n"
+            "  - Docker: pull the newer image and recreate the container.\n"
+            "  - Manual checkout: git pull, then re-run install.sh.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    def git(*argv: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(root), *argv], capture_output=True, text=True)
+
+    branch = args.branch
+    if not branch:
+        head = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        branch = head if head and head != "HEAD" else "main"
+
+    print(f"Checking for updates on '{branch}'...")
+    fetch = git("fetch", "--quiet", "origin", branch)
+    if fetch.returncode != 0:
+        print(f"ERROR: could not fetch from origin:\n{fetch.stderr.strip()}", file=sys.stderr)
+        sys.exit(1)
+
+    local = git("rev-parse", "HEAD").stdout.strip()
+    remote = git("rev-parse", "FETCH_HEAD").stdout.strip()
+    up_to_date = local == remote
+
+    incoming = git("log", "--oneline", f"{local}..{remote}").stdout.strip()
+    if incoming:
+        lines = incoming.splitlines()
+        print(f"\n{len(lines)} new commit{'s' if len(lines) != 1 else ''}:")
+        for line in lines[:15]:
+            print(f"  {line}")
+        if len(lines) > 15:
+            print(f"  … and {len(lines) - 15} more")
+        print()
+
+    if args.check:
+        if up_to_date:
+            print(f"✓ Already up to date ({local[:7]} on {branch}).")
+        else:
+            print(f"Update available: {local[:7]} → {remote[:7]}. Run 'vigilus update' to apply.")
+        return
+
+    if up_to_date and not args.force:
+        print(f"✓ Already up to date ({local[:7]} on {branch}).")
+        return
+
+    # A hard reset clobbers tracked-file changes; refuse unless told not to.
+    dirty = git("status", "--porcelain", "--untracked-files=no").stdout.strip()
+    if dirty and not args.force:
+        print(
+            "ERROR: local changes would be overwritten by the update:\n"
+            f"{dirty}\n"
+            "Commit or stash them, or re-run with --force to discard them.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(f"Updating {local[:7]} → {remote[:7]}...")
+    reset = git("reset", "--hard", "--quiet", remote)
+    if reset.returncode != 0:
+        print(f"ERROR: git reset failed:\n{reset.stderr.strip()}", file=sys.stderr)
+        sys.exit(1)
+
+    _update_backend_deps(backend_dir)
+    _rebuild_frontend(root / "frontend")
+    _run_migrations(backend_dir)
+
+    new_version = ""
+    try:
+        init_src = (backend_dir / "vigilus" / "__init__.py").read_text()
+        match = re.search(r'__version__\s*=\s*"([^"]+)"', init_src)
+        if match:
+            new_version = f"v{match.group(1)} "
+    except OSError:
+        pass
+    print(f"✓ Vigilus updated to {new_version}({remote[:7]}).")
+
+    if args.no_restart:
+        print("Restart skipped (--no-restart). The running server is still on the old version.")
+        return
+    _restart_service()
+
+
 def cmd_doctor(args: argparse.Namespace) -> None:
     """Check host capabilities and print actionable guidance."""
     from vigilus.core.preflight import check_nmap_access, render_sudoers_fragment
@@ -429,6 +627,26 @@ def main() -> None:
 
     channels_subparsers.add_parser("list", help="List configured bots and the allowlist")
 
+    # ── update ──────────────────────────────────────────────
+    update_parser = subparsers.add_parser(
+        "update", help="Update Vigilus to the latest version from GitHub"
+    )
+    update_parser.add_argument(
+        "--check", action="store_true", help="Only report whether an update is available"
+    )
+    update_parser.add_argument(
+        "--branch", default=None, metavar="BRANCH",
+        help="Branch to update from (default: the currently checked-out branch)",
+    )
+    update_parser.add_argument(
+        "--force", action="store_true",
+        help="Discard local changes and update even when already up to date",
+    )
+    update_parser.add_argument(
+        "--no-restart", action="store_true",
+        help="Don't restart the Vigilus service after updating",
+    )
+
     # ── doctor ────────────────────────────────────────────
     doctor_parser = subparsers.add_parser(
         "doctor",
@@ -464,6 +682,8 @@ def main() -> None:
                 channels_parser.print_help()
                 sys.exit(0)
             cmd_channels(args)
+        case "update":
+            cmd_update(args)
         case "doctor":
             cmd_doctor(args)
         case _:
