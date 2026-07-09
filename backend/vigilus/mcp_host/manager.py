@@ -187,10 +187,16 @@ class McpConnection:
             logger.warning("mcp.connection_cancelled", server_id=self.server_id)
             raise
         except Exception as e:
+            # anyio task groups (inside stdio_client) wrap the real failure in
+            # an ExceptionGroup whose str() is just "unhandled errors in a
+            # TaskGroup" — unwrap to the leaf so last_error is actionable.
+            root: BaseException = e
+            while isinstance(root, BaseExceptionGroup) and root.exceptions:
+                root = root.exceptions[0]
             if not self._clean_stop:
                 crashed = True
-                error_msg = str(e)
-            logger.exception("mcp.connection_failed", server_id=self.server_id, error=str(e))
+                error_msg = f"{type(root).__name__}: {root}"
+            logger.exception("mcp.connection_failed", server_id=self.server_id, error=str(root))
         finally:
             self.session = None
             self._task = None
@@ -279,8 +285,22 @@ class McpManager:
             
         env = dict(server.env_vars) if server.env_vars else {}
         # Ensure PATH is inherited so things like node/npx can be found
-        import os as _os
-        full_env = dict(_os.environ)
+        full_env = dict(os.environ)
+
+        # The installed systemd service runs as a home-less user on a mostly
+        # read-only filesystem (ProtectSystem=strict), so npx has nowhere to
+        # put its cache and dies before speaking MCP. Give npm a cache inside
+        # data_dir, and a usable HOME if the inherited one isn't writable.
+        settings = get_settings()
+        npm_cache = os.path.join(settings.data_dir, "npm-cache")
+        os.makedirs(npm_cache, exist_ok=True)
+        full_env.setdefault("npm_config_cache", npm_cache)
+        home = full_env.get("HOME")
+        if not home or not os.path.isdir(home) or not os.access(home, os.W_OK):
+            fallback_home = os.path.join(settings.data_dir, "home")
+            os.makedirs(fallback_home, exist_ok=True)
+            full_env["HOME"] = fallback_home
+
         full_env.update(env)
         
         conn = McpConnection(
