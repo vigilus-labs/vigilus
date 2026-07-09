@@ -246,7 +246,8 @@ async def delete_mcp_server(server_id: str, db: AsyncSession = Depends(get_db)):
         
     manager = McpManager()
     await manager.stop_server(server_id)
-    
+    manager.remove_repo(server_id)  # don't orphan the managed clone on disk
+
     await db.delete(srv)
     await db.commit()
     return {"ok": True}
@@ -261,6 +262,27 @@ async def start_mcp_server(server_id: str, db: AsyncSession = Depends(get_db)):
     await manager.start_server(srv)
     await db.refresh(srv)
     return _to_response(srv)
+
+@router.post("/{server_id}/reinstall", response_model=McpServerResponse)
+async def reinstall_mcp_server(server_id: str, db: AsyncSession = Depends(get_db)):
+    """Wipe a GitHub-based server's managed clone and start it again,
+    forcing a fresh clone + install run."""
+    srv = await db.get(McpServer, server_id)
+    if not srv:
+        raise HTTPException(status_code=404, detail="Server not found")
+    if not srv.github_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Only GitHub-based servers have a managed install to redo.",
+        )
+
+    manager = McpManager()
+    await manager.stop_server(server_id)
+    manager.remove_repo(server_id)
+    await manager.start_server(srv)
+    await db.refresh(srv)
+    return _to_response(srv)
+
 
 @router.post("/{server_id}/stop", response_model=McpServerResponse)
 async def stop_mcp_server(server_id: str, db: AsyncSession = Depends(get_db)):

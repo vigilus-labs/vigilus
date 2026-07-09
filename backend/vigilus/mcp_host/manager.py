@@ -1,5 +1,7 @@
 import asyncio
+import hashlib
 import os
+import shutil
 import structlog
 from typing import Any, Awaitable, Callable, Dict, Optional
 
@@ -11,6 +13,62 @@ from vigilus.db.models import McpServer, McpServerStatus, Tool, ToolImplementati
 from vigilus.config import get_settings
 
 logger = structlog.get_logger(__name__)
+
+CLONE_TIMEOUT_SECONDS = 300
+INSTALL_TIMEOUT_SECONDS = 900
+# Marker written inside a cloned repo after a successful install. Stores a
+# hash of the install command so editing the command triggers a re-install,
+# and a failed install (no marker) is retried on the next start instead of
+# being silently skipped because the clone already exists.
+INSTALL_MARKER = ".vigilus-install-ok"
+
+
+def mcp_repo_path(server_id: str) -> str:
+    """Filesystem location of the managed clone for a GitHub-based server."""
+    return os.path.join(get_settings().data_dir, "mcp_repos", server_id)
+
+
+async def _run_logged(
+    description: str,
+    *,
+    timeout: float,
+    argv: Optional[list[str]] = None,
+    shell_cmd: Optional[str] = None,
+    cwd: Optional[str] = None,
+    env: Optional[dict[str, str]] = None,
+) -> str:
+    """Run a setup step, capturing combined stdout/stderr.
+
+    Raises RuntimeError with the tail of the output on failure or timeout so
+    the real cause (npm error, missing binary, …) ends up in `last_error`
+    instead of just the command that failed.
+    """
+    kwargs: dict[str, Any] = dict(
+        cwd=cwd,
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        stdin=asyncio.subprocess.DEVNULL,  # never hang on an interactive prompt
+    )
+    if shell_cmd is not None:
+        proc = await asyncio.create_subprocess_shell(shell_cmd, **kwargs)
+    else:
+        proc = await asyncio.create_subprocess_exec(*argv, **kwargs)
+
+    try:
+        out_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise RuntimeError(f"{description} timed out after {int(timeout)}s")
+
+    output = out_bytes.decode(errors="replace")
+    if proc.returncode != 0:
+        tail = output[-1500:].strip()
+        detail = f":\n{tail}" if tail else ""
+        raise RuntimeError(f"{description} failed (exit {proc.returncode}){detail}")
+    return output
+
 
 class McpConnection:
     def __init__(self, server_id: str, command: str, args: list[str], env: dict[str, str], github_url: str = None, install_command: str = None, working_dir: str = None):
@@ -30,15 +88,26 @@ class McpConnection:
         # status and drop the in-memory connection on EVERY exit path.
         self.on_exit: Optional[Callable[[str, bool, Optional[str]], Awaitable[None]]] = None
 
+    def _install_marker_path(self, repo_path: str) -> str:
+        return os.path.join(repo_path, INSTALL_MARKER)
+
+    def _install_hash(self) -> str:
+        return hashlib.sha256((self.install_command or "").encode()).hexdigest()
+
+    def _install_up_to_date(self, repo_path: str) -> bool:
+        try:
+            with open(self._install_marker_path(repo_path)) as f:
+                return f.read().strip() == self._install_hash()
+        except OSError:
+            return False
+
     async def _prepare_env(self) -> Optional[str]:
         if not self.github_url:
             return self.working_dir
-            
-        settings = get_settings()
-        repos_dir = os.path.join(settings.data_dir, "mcp_repos")
-        os.makedirs(repos_dir, exist_ok=True)
-        repo_path = os.path.join(repos_dir, self.server_id)
-        
+
+        repo_path = mcp_repo_path(self.server_id)
+        os.makedirs(os.path.dirname(repo_path), exist_ok=True)
+
         if not os.path.exists(repo_path):
             # Re-validate at the point of use: a row may have been created
             # before this check existed or via a path that skips the schema
@@ -51,24 +120,35 @@ class McpConnection:
             # restricts transports so even a malformed URL can't reach git's
             # command-executing helpers (ext::, fd::, …).
             clone_env = {**os.environ, "GIT_ALLOW_PROTOCOL": "https:http:git:ssh"}
-            proc = await asyncio.create_subprocess_exec(
-                "git", "clone", "--", clone_url, repo_path, env=clone_env
+            try:
+                await _run_logged(
+                    f"git clone {clone_url}",
+                    argv=["git", "clone", "--", clone_url, repo_path],
+                    env=clone_env,
+                    timeout=CLONE_TIMEOUT_SECONDS,
+                )
+            except BaseException:
+                # A partial clone would make every future start skip the
+                # clone step and fail confusingly further down.
+                shutil.rmtree(repo_path, ignore_errors=True)
+                raise
+
+        if self.install_command and not self._install_up_to_date(repo_path):
+            logger.info("mcp.run_install", cmd=self.install_command, cwd=repo_path)
+            await _run_logged(
+                f"Install command `{self.install_command}`",
+                shell_cmd=self.install_command,
+                cwd=repo_path,
+                env=self.env,
+                timeout=INSTALL_TIMEOUT_SECONDS,
             )
-            await proc.wait()
-            if proc.returncode != 0:
-                raise RuntimeError(f"Git clone failed for {clone_url}")
-                
-            if self.install_command:
-                logger.info("mcp.run_install", cmd=self.install_command, cwd=repo_path)
-                proc2 = await asyncio.create_subprocess_shell(self.install_command, cwd=repo_path)
-                await proc2.wait()
-                if proc2.returncode != 0:
-                    raise RuntimeError(f"Install command failed: {self.install_command}")
-                    
+            with open(self._install_marker_path(repo_path), "w") as f:
+                f.write(self._install_hash())
+
         cwd = repo_path
         if self.working_dir:
             cwd = os.path.join(repo_path, self.working_dir)
-            
+
         return cwd
 
     async def _run(self):
@@ -230,6 +310,14 @@ class McpManager:
                     await db.commit()
         except Exception:  # noqa: BLE001
             logger.exception("mcp.stop_reconcile_failed", server_id=server_id)
+
+    def remove_repo(self, server_id: str) -> None:
+        """Delete the managed clone so the next start does a fresh
+        clone + install. No-op if the server has no cloned repo."""
+        path = mcp_repo_path(server_id)
+        if os.path.isdir(path):
+            logger.info("mcp.remove_repo", server_id=server_id, path=path)
+            shutil.rmtree(path, ignore_errors=True)
 
     async def _on_connection_exit(
         self, server_id: str, crashed: bool, error_msg: Optional[str]

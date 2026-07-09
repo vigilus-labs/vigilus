@@ -266,6 +266,10 @@ class ApiClient {
     return this.post<McpServer>(`/mcp-servers/${id}/stop`);
   }
 
+  reinstallMcpServer(id: string) {
+    return this.post<McpServer>(`/mcp-servers/${id}/reinstall`);
+  }
+
   async testMcpServer(id: string) {
     return this.post<{status: string, tools: any[]}>(`/mcp-servers/${id}/test`);
   }

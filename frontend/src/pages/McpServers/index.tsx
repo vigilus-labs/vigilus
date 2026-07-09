@@ -299,6 +299,40 @@ export default function McpServers() {
     }
   };
 
+  const handleRestart = async (id: string) => {
+    try {
+      await api.stopMcpServer(id);
+      await api.startMcpServer(id);
+      fetchServers();
+    } catch (err: any) {
+      console.error('Failed to restart server', err);
+      toast(`Failed to restart server: ${err.message ?? err}`, 'error');
+    }
+  };
+
+  const handleReinstall = async (srv: McpServer) => {
+    const ok = await confirm({
+      title: `Reinstall "${srv.name}"?`,
+      message: 'The cloned repository will be deleted, then cloned and installed again from scratch.',
+    });
+    if (!ok) return;
+    try {
+      await api.reinstallMcpServer(srv.id);
+      toast('Reinstall started — a fresh clone and install is running.', 'success');
+      fetchServers();
+    } catch (err: any) {
+      console.error('Failed to reinstall server', err);
+      toast(`Failed to reinstall server: ${err.message ?? err}`, 'error');
+    }
+  };
+
+  // How the server is set up, mirroring the add-form's method tabs.
+  const serverMethod = (srv: McpServer): { label: string; icon: React.ElementType } => {
+    if (srv.github_url) return { label: 'GitHub', icon: Github };
+    if (srv.command === 'npx') return { label: 'npm', icon: Package };
+    return { label: 'command', icon: Terminal };
+  };
+
   // Live preview of the command Vigilus will actually run.
   const previewCommand = (() => {
     if (method === 'npm') {
@@ -373,13 +407,24 @@ export default function McpServers() {
                     </div>
                     <div>
                       <h3 className="text-[15px] font-medium text-text-primary dark:text-text-primary">{srv.name}</h3>
-                      <div className="flex items-center mt-1">
-                        <div className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
-                          srv.status === 'running' ? 'bg-success' :
-                          srv.status === 'error' ? 'bg-danger' :
-                          'bg-text-secondary/50'
-                        }`} />
-                        <span className="text-[12px] text-text-secondary capitalize">{srv.status}</span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center">
+                          <div className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                            srv.status === 'running' ? 'bg-success' :
+                            srv.status === 'error' ? 'bg-danger' :
+                            'bg-text-secondary/50'
+                          }`} />
+                          <span className="text-[12px] text-text-secondary capitalize">{srv.status}</span>
+                        </div>
+                        {(() => {
+                          const m = serverMethod(srv);
+                          const MIcon = m.icon;
+                          return (
+                            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-border dark:border-border text-[10px] font-medium text-text-secondary uppercase tracking-wider">
+                              <MIcon className="w-3 h-3" /> {m.label}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -411,8 +456,17 @@ export default function McpServers() {
                     </button>
                   )}
                   {srv.status === 'running' && (
-                    <button onClick={() => {handleStop(srv.id); setTimeout(() => handleStart(srv.id), 500);}} className="px-3 py-1.5 text-[12px] font-medium rounded text-text-secondary hover:text-text-primary hover:bg-surface dark:hover:bg-border transition-colors flex items-center">
+                    <button onClick={() => handleRestart(srv.id)} className="px-3 py-1.5 text-[12px] font-medium rounded text-text-secondary hover:text-text-primary hover:bg-surface dark:hover:bg-border transition-colors flex items-center">
                       <RefreshCw className="w-3.5 h-3.5 mr-1" /> Restart
+                    </button>
+                  )}
+                  {srv.github_url && (
+                    <button
+                      onClick={() => handleReinstall(srv)}
+                      className="px-3 py-1.5 text-[12px] font-medium rounded text-text-secondary hover:text-text-primary hover:bg-surface dark:hover:bg-border transition-colors flex items-center"
+                      title="Delete the cloned repo and re-run clone + install"
+                    >
+                      <Package className="w-3.5 h-3.5 mr-1" /> Reinstall
                     </button>
                   )}
                   <button
