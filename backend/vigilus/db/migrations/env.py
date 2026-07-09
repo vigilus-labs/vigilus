@@ -51,9 +51,32 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _is_autogenerate() -> bool:
+    cmd_opts = getattr(config, "cmd_opts", None)
+    return cmd_opts is not None and getattr(cmd_opts, "autogenerate", False)
+
+
 def do_run_migrations(connection) -> None:
     """Run migrations with an active connection."""
     context.configure(connection=connection, target_metadata=target_metadata)
+
+    # Adopt pre-Alembic databases: init_db()'s create_all builds the whole
+    # schema from the current models — the very schema head describes — but
+    # records no alembic_version row. Replaying the chain against it fails on
+    # the first duplicate column, so stamp head instead of migrating. Never
+    # diverts autogenerate, which needs run_migrations() to emit the diff.
+    migration_ctx = context.get_context()
+    if migration_ctx.get_current_revision() is None and not _is_autogenerate():
+        from alembic.script import ScriptDirectory
+
+        migration_ctx.stamp(ScriptDirectory.from_config(config), "head")
+        # For SQLite (non-transactional DDL) context.begin_transaction() is a
+        # nullcontext, so the version-row INSERT sits in the connection's
+        # autobegin transaction — commit it or it rolls back on close.
+        connection.commit()
+        print("Existing schema adopted: stamped at head, no migrations replayed.")
+        return
+
     with context.begin_transaction():
         context.run_migrations()
 
