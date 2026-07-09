@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
+import structlog
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -12,6 +13,8 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from vigilus.config import get_settings
+
+logger = structlog.get_logger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -64,6 +67,33 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+def _stamp_alembic_head_if_unstamped(sync_connection) -> None:  # noqa: ANN001
+    """Record the latest Alembic revision on a DB create_all just built.
+
+    create_all produces the schema the newest migration describes but leaves
+    no alembic_version row, and `alembic upgrade head` (vigilus update/init)
+    replays the whole chain against an unstamped DB — failing on the first
+    duplicate column. Stamping at creation time keeps the two in agreement.
+    Best-effort: advisory only, must never block startup.
+    """
+    try:
+        from alembic.runtime.migration import MigrationContext
+        from alembic.script import ScriptDirectory
+
+        from vigilus.core.preflight import _alembic_config
+
+        cfg = _alembic_config()
+        if cfg is None:
+            return
+        ctx = MigrationContext.configure(sync_connection)
+        if ctx.get_current_revision() is not None:
+            return
+        ctx.stamp(ScriptDirectory.from_config(cfg), "head")
+        logger.info("db.alembic_stamped", revision="head")
+    except Exception:  # noqa: BLE001
+        logger.exception("db.alembic_stamp_failed")
+
+
 async def init_db() -> None:
     """Create all tables defined by ORM models."""
     from vigilus.db import models as _models  # noqa: F401 – ensure models are imported
@@ -71,6 +101,7 @@ async def init_db() -> None:
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_stamp_alembic_head_if_unstamped)
 
 
 async def close_db() -> None:
