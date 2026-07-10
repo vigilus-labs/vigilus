@@ -200,7 +200,9 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
             if forward_jit is not None:
                 event_bus.unsubscribe("jit.requested", forward_jit)
             if chat_session_id is not None:
-                get_task_registry().unregister(chat_session_id)
+                get_task_registry().unregister(
+                    chat_session_id, running_task.id if running_task is not None else None
+                )
                 if bridge is not None:
                     # Resolve any live SSE viewer's stream cleanly before close.
                     bridge.publish(EVT_DONE, {"session_id": chat_session_id})

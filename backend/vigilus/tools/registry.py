@@ -49,6 +49,7 @@ class ToolRegistry:
         jit_token: str | None = None,
         jit_wait_seconds: int | None = None,
         unattended: bool = False,
+        cancel_event: asyncio.Event | None = None,
     ) -> ToolResult:
         """Execute a tool invocation.
 
@@ -61,6 +62,9 @@ class ToolRegistry:
         widens or auto-grants the permission — only the wait timeout differs.
         """
         from vigilus.config import get_settings
+
+        if cancel_event is not None and cancel_event.is_set():
+            return ToolResult(success=False, error="Task cancelled before tool execution.")
 
         if jit_wait_seconds is None:
             settings = get_settings()
@@ -163,7 +167,20 @@ class ToolRegistry:
                 else:
                     # Strict trust: PAUSE here until the user approves or
                     # denies (inline chat card or JIT page), or we time out.
-                    outcome = await self._wait_for_jit_resolution(req.id, jit_wait_seconds)
+                    if cancel_event is None:
+                        outcome = await self._wait_for_jit_resolution(req.id, jit_wait_seconds)
+                    else:
+                        outcome = await self._wait_for_jit_resolution(
+                            req.id, jit_wait_seconds, cancel_event=cancel_event
+                        )
+                    if outcome == "cancelled":
+                        # A task that was stopped must never leave a live grant
+                        # request behind. Resolve it fail-closed and notify all
+                        # JIT surfaces through the normal event path.
+                        await warden.deny_request(db, req.id, approver="task_cancelled")
+                        return ToolResult(
+                            success=False, error="Task cancelled while awaiting approval."
+                        )
                     if outcome == "denied":
                         return ToolResult(
                             success=False,
@@ -204,6 +221,9 @@ class ToolRegistry:
                     tool=tool.name,
                     resource=resource,
                 )
+
+            if cancel_event is not None and cancel_event.is_set():
+                return ToolResult(success=False, error="Task cancelled before tool execution.")
 
             # 4. Write tool_call_start Action
             action = Action(
@@ -301,13 +321,20 @@ class ToolRegistry:
 
             return result_obj
 
-    async def _wait_for_jit_resolution(self, request_id: str, wait_seconds: int) -> str | None:
-        """Block until the JIT request is resolved or the wait window closes.
+    async def _wait_for_jit_resolution(
+        self,
+        request_id: str,
+        wait_seconds: int,
+        *,
+        cancel_event: asyncio.Event | None = None,
+    ) -> str | None:
+        """Block until a JIT request resolves, is cancelled, or times out.
 
-        Returns the token string when approved, the sentinel ``"denied"``
-        when denied/revoked/expired, or None on timeout. Each poll uses a
-        fresh short-lived session so the approval write (from the API) is
-        never blocked by a long-running read transaction.
+        Returns the token string when approved, ``"denied"`` when
+        denied/revoked/expired, ``"cancelled"`` when its turn is stopped, or
+        None on timeout. Each poll uses a fresh short-lived session so the
+        approval write (from the API) is never blocked by a long-running read
+        transaction.
         """
         from vigilus.db.models import JitRequest, JitStatus
 
@@ -315,6 +342,9 @@ class ToolRegistry:
         poll_interval = 1.0
 
         while True:
+            if cancel_event is not None and cancel_event.is_set():
+                return "cancelled"
+
             async with self.session_factory() as poll_db:
                 req = await poll_db.get(JitRequest, request_id)
                 if not req:
@@ -326,7 +356,16 @@ class ToolRegistry:
 
             if time.monotonic() >= deadline:
                 return None
-            await asyncio.sleep(min(poll_interval, max(deadline - time.monotonic(), 0.05)))
+
+            delay = min(poll_interval, max(deadline - time.monotonic(), 0.05))
+            if cancel_event is None:
+                await asyncio.sleep(delay)
+                continue
+            try:
+                await asyncio.wait_for(cancel_event.wait(), timeout=delay)
+                return "cancelled"
+            except TimeoutError:
+                pass
 
     @staticmethod
     def _extract_resource(arguments: dict[str, Any]) -> str:

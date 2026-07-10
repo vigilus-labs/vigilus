@@ -13,8 +13,10 @@ backend process only.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Awaitable, TypeVar
 from uuid import uuid4
 
 import structlog
@@ -28,6 +30,63 @@ def _utcnow() -> datetime:
 
 # Keep at most this many activity events per turn (most recent kept).
 ACTIVITY_CAP = 300
+
+T = TypeVar("T")
+
+
+class TaskCancelled(Exception):
+    """Raised when an in-flight turn is stopped by its user."""
+
+
+async def await_cancelled(
+    awaitable: Awaitable[T],
+    cancel_event: asyncio.Event | None = None,
+    *,
+    timeout: float | None = None,
+) -> T:
+    """Await work while promptly honouring a running turn's cancellation.
+
+    The awaited operation runs in its own task so a cancellation request can
+    cancel a stalled provider request without cancelling the HTTP handler that
+    owns the chat turn.  Callers must translate :class:`TaskCancelled` into a
+    normal terminal turn result and run their usual cleanup.
+    """
+    if cancel_event is None:
+        if timeout is None:
+            return await awaitable
+        return await asyncio.wait_for(awaitable, timeout=timeout)
+
+    if cancel_event.is_set():
+        raise TaskCancelled()
+
+    operation = asyncio.ensure_future(awaitable)
+    cancel_waiter = asyncio.create_task(cancel_event.wait())
+    try:
+        done, _ = await asyncio.wait(
+            {operation, cancel_waiter},
+            timeout=timeout,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if operation in done:
+            return await operation
+        if cancel_waiter in done:
+            operation.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await operation
+            raise TaskCancelled()
+
+        operation.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await operation
+        raise TimeoutError("Task operation timed out")
+    finally:
+        if not operation.done():
+            operation.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await operation
+        cancel_waiter.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await cancel_waiter
 
 
 @dataclass
@@ -94,16 +153,21 @@ class TaskRegistry:
         logger.info("task.registered", session_id=session_id, task_id=task.id)
         return task
 
-    def unregister(self, session_id: str) -> None:
-        self._tasks.pop(session_id, None)
+    def unregister(self, session_id: str, task_id: str | None = None) -> None:
+        """Remove a completed task, without removing a newer replacement."""
+        task = self._tasks.get(session_id)
+        if task and (task_id is None or task.id == task_id):
+            self._tasks.pop(session_id, None)
 
     def cancel(self, session_id: str) -> bool:
-        """Request cancellation. Returns True if a task was found and signalled."""
+        """Request cooperative cancellation. Returns False when no task exists."""
         task = self._tasks.get(session_id)
         if not task:
             return False
-        task.cancel_event.set()
-        logger.info("task.cancel_requested", session_id=session_id, task_id=task.id)
+        if not task.cancel_event.is_set():
+            task.cancel_event.set()
+            task.current_step = "Cancelling…"
+            logger.info("task.cancel_requested", session_id=session_id, task_id=task.id)
         return True
 
     def is_cancelled(self, session_id: str) -> bool:

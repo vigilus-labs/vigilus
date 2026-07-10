@@ -35,7 +35,7 @@ from vigilus.core.orchestrator import (
 )
 from vigilus.core.delegation import parse_delegation, strip_delegation, execute_delegation
 from vigilus.core.prompt_builder import PromptBuilder
-from vigilus.core.tasks import get_task_registry
+from vigilus.core.tasks import TaskCancelled, await_cancelled, get_task_registry
 from vigilus.core.compressor import ContextCompressor, estimate_tokens
 from vigilus.providers.base import LLMMessage, LLMResponse, ToolSpec, ToolUse
 from vigilus.api.sse import (
@@ -316,12 +316,27 @@ async def _run_orchestrator(
             bridge.publish(EVT_THINKING, {"iteration": iteration})
 
         try:
-            response: LLMResponse = await provider.complete(
-                messages=history,
-                system=system_prompt,
-                tools=None,  # Orchestrator has NO tools — only delegates
-                temperature=0.0,
+            from vigilus.config import get_settings
+
+            response: LLMResponse = await await_cancelled(
+                provider.complete(
+                    messages=history,
+                    system=system_prompt,
+                    tools=None,  # Orchestrator has NO tools — only delegates
+                    temperature=0.0,
+                ),
+                cancel_event,
+                timeout=get_settings().llm_request_timeout_seconds,
             )
+        except TaskCancelled:
+            logger.info("orchestrator.cancelled_while_waiting", session_id=session_id)
+            new_messages.append({
+                "role": "assistant",
+                "content": "⏹ Task cancelled — stopped while waiting for the AI provider.",
+            })
+            if bridge:
+                bridge.publish(EVT_ERROR, {"error": "Task cancelled by user."})
+            break
         except Exception as e:
             logger.error("orchestrator.llm_error", error=str(e))
             new_messages.append({
@@ -465,11 +480,31 @@ async def _run_orchestrator(
 
         # Get a fresh DB session for delegation (it may run its own queries)
         factory = get_session_factory()
-        async with factory() as del_db:
-            delegation_result = await execute_delegation(
-                delegation, db=del_db, session_id=session_id,
-                bridge=bridge, cancel_event=cancel_event, unattended=unattended,
-            )
+        try:
+            async with factory() as del_db:
+                delegation_result = await execute_delegation(
+                    delegation, db=del_db, session_id=session_id,
+                    bridge=bridge, cancel_event=cancel_event, unattended=unattended,
+                )
+        except TaskCancelled:
+            logger.info("orchestrator.cancelled_while_delegating", session_id=session_id)
+            new_messages.append({
+                "role": "assistant",
+                "content": "⏹ Task cancelled — stopped while waiting for the AI provider.",
+            })
+            if bridge:
+                bridge.publish(EVT_ERROR, {"error": "Task cancelled by user."})
+            break
+
+        if cancel_event is not None and cancel_event.is_set():
+            logger.info("orchestrator.cancelled_after_delegation", session_id=session_id)
+            new_messages.append({
+                "role": "assistant",
+                "content": "⏹ Task cancelled — stopped before any further steps were taken.",
+            })
+            if bridge:
+                bridge.publish(EVT_ERROR, {"error": "Task cancelled by user."})
+            break
 
         await event_bus.publish("action.completed", {
             "event_type": "action.completed",
@@ -736,7 +771,7 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         event_bus.unsubscribe("jit.requested", _forward_jit)
-        get_task_registry().unregister(session.id)
+        get_task_registry().unregister(session.id, running_task.id)
         bridge.close()
         unregister_bridge(session.id)
 
