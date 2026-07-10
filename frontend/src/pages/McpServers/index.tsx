@@ -79,7 +79,7 @@ export default function McpServers() {
 
   // github method
   const [githubUrl, setGithubUrl] = useState('');
-  const [installCommand, setInstallCommand] = useState('npm install && npm run build');
+  const [installCommand, setInstallCommand] = useState('npm install');
   const [workingDir, setWorkingDir] = useState('');
 
   useEffect(() => {
@@ -668,7 +668,8 @@ export default function McpServers() {
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[12px] font-medium text-text-secondary uppercase tracking-wider">Install command (optional)</label>
-                      <input value={installCommand} onChange={e => setInstallCommand(e.target.value)} placeholder="npm install && npm run build" className="w-full px-3 py-2 text-[13px] bg-white/50 dark:bg-black/20 border border-accent/20 rounded-md focus:border-accent font-mono" />
+                      <input value={installCommand} onChange={e => setInstallCommand(e.target.value)} placeholder="npm install --omit=dev" className="w-full px-3 py-2 text-[13px] bg-white/50 dark:bg-black/20 border border-accent/20 rounded-md focus:border-accent font-mono" />
+                      <p className="text-[11px] text-text-secondary/70">One executable with arguments. Shell operators such as <code className="font-mono">&&</code>, pipes, redirects, and substitutions are not supported.</p>
                     </div>
                   </div>
                 )}

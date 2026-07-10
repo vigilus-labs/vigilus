@@ -1,10 +1,12 @@
-"""Host native tool handlers – shell execution, filesystem operations."""
+"""Host native tool handlers – command execution, filesystem operations."""
 
 import asyncio
 import os
 from typing import Any
 
 import structlog
+
+from vigilus.core.command import parse_command_argv
 
 logger = structlog.get_logger(__name__)
 
@@ -39,7 +41,7 @@ def _confine(path: str, operator: Any) -> tuple[str | None, str | None]:
 
 
 async def shell_exec(arguments: dict[str, Any], operator: Any = None, **kwargs) -> dict[str, Any]:
-    """Execute a shell command locally. Confined to the operator's working_dir if set."""
+    """Execute one local command with argv-style arguments."""
     command = arguments.get("command")
     if not command:
         return {"error": "command is required", "exit_code": 1}
@@ -54,10 +56,15 @@ async def shell_exec(arguments: dict[str, Any], operator: Any = None, **kwargs) 
         working_dir = requested_dir or os.getcwd()
     timeout = arguments.get("timeout", 30)
 
-    logger.info("shell_exec", command=command, cwd=working_dir)
     try:
-        process = await asyncio.create_subprocess_shell(
-            command,
+        argv = parse_command_argv(command)
+    except ValueError as exc:
+        return {"error": str(exc), "exit_code": 1}
+
+    logger.info("shell_exec", command=command, argv=argv, cwd=working_dir)
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *argv,
             cwd=working_dir,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -149,7 +156,9 @@ async def fs_list(arguments: dict[str, Any], operator: Any = None, **kwargs) -> 
             for root, dirs, files in os.walk(path):
                 rel = os.path.relpath(root, path)
                 for d in dirs:
-                    entries.append({"name": os.path.join(rel, d) if rel != "." else d, "type": "dir"})
+                    entries.append(
+                        {"name": os.path.join(rel, d) if rel != "." else d, "type": "dir"}
+                    )
                 for f in files:
                     full = os.path.join(root, f)
                     stat = os.stat(full)

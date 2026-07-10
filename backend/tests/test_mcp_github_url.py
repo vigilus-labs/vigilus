@@ -5,7 +5,7 @@ dash. Covers the validator directly and through the create API."""
 import pytest
 from httpx import AsyncClient
 
-from vigilus.schemas.mcp import validate_github_url
+from vigilus.schemas.mcp import validate_github_url, validate_install_command
 
 SAFE_URLS = [
     "https://github.com/owner/repo.git",
@@ -36,6 +36,18 @@ def test_unsafe_urls_rejected(url):
         validate_github_url(url)
 
 
+@pytest.mark.parametrize(
+    "command", ["npm install && npm run build", "npm install | tee log", "echo $(id)"]
+)
+def test_shell_install_commands_rejected(command):
+    with pytest.raises(ValueError, match="must not use shell operators"):
+        validate_install_command(command)
+
+
+def test_argv_install_command_is_accepted():
+    assert validate_install_command("npm install --omit=dev") == "npm install --omit=dev"
+
+
 def test_empty_and_none_pass_through():
     assert validate_github_url(None) is None
     assert validate_github_url("   ") is None
@@ -48,6 +60,20 @@ async def test_create_api_rejects_unsafe_github_url(async_client: AsyncClient):
     res = await async_client.post(
         "/api/mcp-servers",
         json={"name": "evil", "command": "echo", "github_url": "ext::sh -c id"},
+    )
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_api_rejects_shell_install_command(async_client: AsyncClient):
+    res = await async_client.post(
+        "/api/mcp-servers",
+        json={
+            "name": "evil-install",
+            "command": "node",
+            "github_url": "https://github.com/owner/repo.git",
+            "install_command": "npm install && touch injected.txt",
+        },
     )
     assert res.status_code == 422
 

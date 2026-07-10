@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable, Dict, Optional
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.client.session import ClientSession
 
+from vigilus.core.command import parse_command_argv
 from vigilus.db.base import get_session_factory
 from vigilus.db.models import McpServer, McpServerStatus, Tool, ToolImplementationType, PermissionLevel
 from vigilus.config import get_settings
@@ -32,8 +33,7 @@ async def _run_logged(
     description: str,
     *,
     timeout: float,
-    argv: Optional[list[str]] = None,
-    shell_cmd: Optional[str] = None,
+    argv: list[str],
     cwd: Optional[str] = None,
     env: Optional[dict[str, str]] = None,
 ) -> str:
@@ -50,10 +50,7 @@ async def _run_logged(
         stderr=asyncio.subprocess.STDOUT,
         stdin=asyncio.subprocess.DEVNULL,  # never hang on an interactive prompt
     )
-    if shell_cmd is not None:
-        proc = await asyncio.create_subprocess_shell(shell_cmd, **kwargs)
-    else:
-        proc = await asyncio.create_subprocess_exec(*argv, **kwargs)
+    proc = await asyncio.create_subprocess_exec(*argv, **kwargs)
 
     try:
         out_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
@@ -135,9 +132,10 @@ class McpConnection:
 
         if self.install_command and not self._install_up_to_date(repo_path):
             logger.info("mcp.run_install", cmd=self.install_command, cwd=repo_path)
+            install_argv = parse_command_argv(self.install_command, field_name="install_command")
             await _run_logged(
                 f"Install command `{self.install_command}`",
-                shell_cmd=self.install_command,
+                argv=install_argv,
                 cwd=repo_path,
                 env=self.env,
                 timeout=INSTALL_TIMEOUT_SECONDS,

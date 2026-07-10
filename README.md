@@ -257,7 +257,7 @@ toggle *Respond in groups* for that platform. Slash commands (`/help`,
 - Append-only audit log with secret redaction
 - JIT tokens are HMAC-signed, short-lived, and revocable
 - SSH host keys verified trust-on-first-use: keys are pinned to `data/known_hosts` on first connect, and connections fail if a host's key later changes
-- Host tools (`shell_exec`, `fs_read`, `fs_write`, `fs_list`) are confined to the operator's working directory when one is set — including symlink and path-traversal escapes
+- Host filesystem tools (`fs_read`, `fs_write`, `fs_list`) are confined to the operator's working directory when one is set — including symlink and path-traversal escapes; `shell_exec` runs one argv-style command with that directory as its working directory
 - JIT tokens are scoped to the resource they were approved for (glob + path containment)
 - CORS locked to configured origins
 
