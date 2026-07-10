@@ -6,6 +6,7 @@ import { JitGrantControls, JitGrantOpts } from '@/components/JitGrantControls';
 import { Markdown } from '@/components/Markdown';
 import { ProviderWizard } from '@/components/ProviderWizard';
 import { ChatStream, ActivityEvent, SSEEventType, SSEEventData, nextActivityId } from '@/lib/sse';
+import { useVigilusEvents } from '@/lib/ws';
 import { Session, Message as Msg, Provider, Operator, RunningTask, CommandSpec, CommandResult } from '@/types';
 
 interface JitChatItem {
@@ -102,6 +103,21 @@ export default function Chat() {
 
   // JIT approval requests raised during this conversation
   const [jitItems, setJitItems] = useState<JitChatItem[]>([]);
+
+  // Approvals may be made from the app-wide banner or the JIT page rather
+  // than the inline card. Reflect their globally broadcast resolution here
+  // so the chat never presents stale, unusable controls.
+  useVigilusEvents({
+    events: {
+      'jit.resolved': event => {
+        const { id, status } = event.payload as { id?: string; status?: string };
+        if (!id || (status !== 'approved' && status !== 'denied')) return;
+        setJitItems(prev => prev.map(item => (
+          item.id === id ? { ...item, resolving: false, resolution: status } : item
+        )));
+      },
+    },
+  });
 
   // Inline rename state for the session sidebar
   const [renamingId, setRenamingId] = useState<string | null>(null);
