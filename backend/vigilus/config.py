@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     # human to approve before we fail closed. Never auto-grants.
     jit_wait_seconds_unattended: int = 1800
 
+    # ── Task execution ──────────────────────────────────────
+    # Bound an individual provider request so a stalled upstream cannot leave
+    # an in-memory running task permanently stuck.
+    llm_request_timeout_seconds: int = Field(default=120, gt=0)
+
     # ── CORS ────────────────────────────────────────────────
     cors_origins: list[str] = ["http://localhost:5173"]
 

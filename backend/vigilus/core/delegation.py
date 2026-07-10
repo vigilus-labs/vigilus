@@ -18,6 +18,7 @@ from sqlalchemy.orm import selectinload
 from vigilus.providers.base import LLMMessage, ProviderError
 from vigilus.db.models import Operator, OperatorTool
 from vigilus.core.operator_runtime import OperatorRuntime
+from vigilus.core.tasks import TaskCancelled
 
 logger = structlog.get_logger(__name__)
 
@@ -232,6 +233,8 @@ async def execute_delegation(
             "tool_calls": tool_history,
         }
 
+    except TaskCancelled:
+        raise
     except ProviderError as e:
         # Upstream LLM failure (timeout / 5xx / rate limit) — already retried by
         # the provider layer. Not a Vigilus bug, so log it concisely without a

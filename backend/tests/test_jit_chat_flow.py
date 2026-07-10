@@ -99,6 +99,31 @@ async def test_retry_after_denial_still_denied(denied_setup, db_session):
 
 
 @pytest.mark.asyncio
+async def test_jit_wait_stops_when_task_is_cancelled(denied_setup, db_session):
+    import asyncio
+
+    from vigilus.core.rbac import Permission, WardenService
+    from vigilus.core.tasks import get_task_registry
+
+    op, _tool, path = denied_setup
+    req, _ = await WardenService().request_jit(
+        db_session, op, path, Permission.exec, "A cancellable tool call"
+    )
+    registry = ToolRegistry()
+    task = get_task_registry().register("jit-cancel-test", "JIT cancellation")
+
+    try:
+        waiter = asyncio.create_task(
+            registry._wait_for_jit_resolution(req.id, 10, cancel_event=task.cancel_event)
+        )
+        await asyncio.sleep(0)
+        task.cancel_event.set()
+        assert await waiter == "cancelled"
+    finally:
+        get_task_registry().unregister("jit-cancel-test", task.id)
+
+
+@pytest.mark.asyncio
 async def test_execution_pauses_until_approved(denied_setup, db_session):
     """The new blocking flow: the tool call waits, the user approves
     mid-wait, and the call proceeds without the LLM retrying."""

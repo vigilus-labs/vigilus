@@ -108,6 +108,7 @@ All settings are configurable via environment variables with the `VIGILUS_` pref
 | `VIGILUS_TRUST_MODE` | `strict` | Default trust mode (`strict` or `lenient`) |
 | `VIGILUS_JIT_MAX_TTL` | `60` | Maximum JIT token TTL in minutes |
 | `VIGILUS_JIT_DEFAULT_TTL` | `15` | Default JIT token TTL in minutes |
+| `VIGILUS_LLM_REQUEST_TIMEOUT_SECONDS` | `120` | Maximum duration of one LLM request before the task fails closed |
 | `VIGILUS_CORS` | `http://localhost:5173` | CORS origins (dev only) |
 | `VIGILUS_LOG_LEVEL` | `INFO` | Log level |
 | `VIGILUS_SEARCH_ENABLED` | `true` | Master switch for web research (Vigilus-only) |

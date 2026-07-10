@@ -9,6 +9,7 @@ from vigilus.db.models import Operator
 from vigilus.providers.base import LLMMessage, ToolSpec, ToolUse
 from vigilus.providers.registry import build_provider
 from vigilus.tools.registry import ToolRegistry
+from vigilus.core.tasks import TaskCancelled, await_cancelled
 
 logger = structlog.get_logger(__name__)
 
@@ -124,12 +125,22 @@ class OperatorRuntime:
                 tool_count=len(tools),
             )
 
-            response = await self.provider.complete(
-                messages=messages,
-                system=system_prompt,
-                tools=tools,
-                temperature=0.0,
-            )
+            try:
+                from vigilus.config import get_settings
+
+                response = await await_cancelled(
+                    self.provider.complete(
+                        messages=messages,
+                        system=system_prompt,
+                        tools=tools,
+                        temperature=0.0,
+                    ),
+                    cancel_event,
+                    timeout=get_settings().llm_request_timeout_seconds,
+                )
+            except TaskCancelled:
+                logger.info("operator.cancelled_while_waiting", operator=self.operator.name)
+                raise
 
             # Build assistant message
             assistant_content = response.content or ""
@@ -193,6 +204,7 @@ class OperatorRuntime:
                         session_id=session_id,
                         jit_token=jit_token,
                         unattended=unattended,
+                        cancel_event=cancel_event,
                     )
 
                     tool_output = result.output if result.success else f"Error: {result.error}"
