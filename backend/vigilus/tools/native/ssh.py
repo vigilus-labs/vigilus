@@ -27,11 +27,17 @@ async def _resolve_server(db, server_ref: str) -> dict[str, Any] | None:
     server = await db.get(Server, server_ref)
     if not server:
         ref = server_ref.strip()
-        server = (await db.execute(
-            select(Server).where(
-                (func.lower(Server.name) == ref.lower()) | (Server.hostname == ref)
+        server = (
+            (
+                await db.execute(
+                    select(Server).where(
+                        (func.lower(Server.name) == ref.lower()) | (Server.hostname == ref)
+                    )
+                )
             )
-        )).scalars().first()
+            .scalars()
+            .first()
+        )
     if not server:
         return None
 
@@ -53,9 +59,7 @@ async def _resolve_server(db, server_ref: str) -> dict[str, Any] | None:
             except Exception:
                 result["secret"] = cred.secret
             try:
-                result["passphrase"] = (
-                    decrypt(cred.passphrase) if cred.passphrase else None
-                )
+                result["passphrase"] = decrypt(cred.passphrase) if cred.passphrase else None
             except Exception:
                 result["passphrase"] = cred.passphrase
 
@@ -178,8 +182,13 @@ async def ssh_exec(
         client = None
         try:
             client = _ssh_connect_sync(
-                hostname, port, username, secret,
-                auth_method=auth_method, timeout=10, passphrase=passphrase,
+                hostname,
+                port,
+                username,
+                secret,
+                auth_method=auth_method,
+                timeout=10,
+                passphrase=passphrase,
             )
             stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
             exit_code = stdout.channel.recv_exit_status()
@@ -200,8 +209,13 @@ async def ssh_exec(
 
 
 def _ssh_connect_sync(
-    hostname, port, username, secret,
-    auth_method="password", timeout=10, passphrase=None,
+    hostname,
+    port,
+    username,
+    secret,
+    auth_method="password",
+    timeout=10,
+    passphrase=None,
 ):
     """Synchronous SSH connect for use with asyncio.to_thread.
 

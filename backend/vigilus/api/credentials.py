@@ -1,15 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
-from pydantic import BaseModel
 from datetime import datetime
 
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from vigilus.core.crypto import encrypt
 from vigilus.db.base import get_db
 from vigilus.db.models import Credential, SshAuthMethod
-from vigilus.core.crypto import encrypt
 
 router = APIRouter(prefix="/credentials", tags=["Credentials"])
+
 
 class CredentialCreate(BaseModel):
     name: str
@@ -19,12 +20,14 @@ class CredentialCreate(BaseModel):
     secret: str
     passphrase: str | None = None
 
+
 class CredentialUpdate(BaseModel):
     name: str | None = None
     ssh_auth_method: str | None = None
     username: str | None = None
     secret: str | None = None
     passphrase: str | None = None
+
 
 class CredentialResponse(BaseModel):
     id: str
@@ -36,6 +39,7 @@ class CredentialResponse(BaseModel):
     has_passphrase: bool
     created_at: datetime
 
+
 def _to_response(cred: Credential) -> CredentialResponse:
     return CredentialResponse(
         id=cred.id,
@@ -45,13 +49,15 @@ def _to_response(cred: Credential) -> CredentialResponse:
         username=cred.username,
         has_secret=bool(cred.secret),
         has_passphrase=bool(cred.passphrase),
-        created_at=cred.created_at
+        created_at=cred.created_at,
     )
 
-@router.get("", response_model=List[CredentialResponse])
+
+@router.get("", response_model=list[CredentialResponse])
 async def list_credentials(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Credential).order_by(Credential.name))
     return [_to_response(c) for c in result.scalars().all()]
+
 
 @router.post("", response_model=CredentialResponse)
 async def create_credential(data: CredentialCreate, db: AsyncSession = Depends(get_db)):
@@ -61,15 +67,18 @@ async def create_credential(data: CredentialCreate, db: AsyncSession = Depends(g
         ssh_auth_method=SshAuthMethod(data.ssh_auth_method) if data.ssh_auth_method else None,
         username=data.username,
         secret=encrypt(data.secret) if data.secret else None,
-        passphrase=encrypt(data.passphrase) if data.passphrase else None
+        passphrase=encrypt(data.passphrase) if data.passphrase else None,
     )
     db.add(cred)
     await db.commit()
     await db.refresh(cred)
     return _to_response(cred)
 
+
 @router.put("/{credential_id}", response_model=CredentialResponse)
-async def update_credential(credential_id: str, data: CredentialUpdate, db: AsyncSession = Depends(get_db)):
+async def update_credential(
+    credential_id: str, data: CredentialUpdate, db: AsyncSession = Depends(get_db)
+):
     cred = await db.get(Credential, credential_id)
     if not cred:
         raise HTTPException(status_code=404, detail="Credential not found")

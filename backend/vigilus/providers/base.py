@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import random
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Awaitable, Callable, TypeVar
+from typing import Any, TypeVar
 
 T = TypeVar("T")
 

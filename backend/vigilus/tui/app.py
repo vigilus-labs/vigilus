@@ -8,11 +8,9 @@ Usage::
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import ClassVar
 
-from rich.markdown import Markdown as RichMarkdown
-from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -43,6 +41,7 @@ from vigilus.tui.config import (
 
 # ── Custom message types ───────────────────────────────────────────────────────
 
+
 @dataclass
 class ChatMessage:
     role: str  # 'user' | 'assistant' | 'system' | 'error'
@@ -51,6 +50,7 @@ class ChatMessage:
 
 
 # ── Login screen ──────────────────────────────────────────────────────────────
+
 
 class LoginScreen(Screen[None]):
     """Username + password login form."""
@@ -156,6 +156,7 @@ class LoginScreen(Screen[None]):
 
 
 # ── Provider wizard screen ────────────────────────────────────────────────────
+
 
 class ProviderWizardScreen(Screen[dict | None]):
     """Guided provider setup — stepped prompts, mirrors the web ProviderWizard."""
@@ -286,14 +287,16 @@ class ProviderWizardScreen(Screen[dict | None]):
         btn.label = "Creating…"
 
         try:
-            provider = await self._client.create_provider({
-                "name": name,
-                "type": selected["type"],
-                "api_key": api_key,
-                "base_url": base_url or selected.get("base_url"),
-                "default_model": selected.get("default_model"),
-                "enabled": True,
-            })
+            provider = await self._client.create_provider(
+                {
+                    "name": name,
+                    "type": selected["type"],
+                    "api_key": api_key,
+                    "base_url": base_url or selected.get("base_url"),
+                    "default_model": selected.get("default_model"),
+                    "enabled": True,
+                }
+            )
             self._created_id = provider["id"]
         except ApiError as e:
             self._show_error(str(e))
@@ -309,10 +312,14 @@ class ProviderWizardScreen(Screen[dict | None]):
                 models = result.get("models", [])
                 best_model = models[0] if models else selected.get("default_model")
                 if best_model:
-                    await self._client.update_provider(self._created_id, {"default_model": best_model})
+                    await self._client.update_provider(
+                        self._created_id, {"default_model": best_model}
+                    )
                 self._show_status(f"✓ Connected! Using model: {best_model or 'default'}")
             else:
-                self._show_status(f"⚠ Provider saved but test failed: {result.get('error', 'unknown')}")
+                self._show_status(
+                    f"⚠ Provider saved but test failed: {result.get('error', 'unknown')}"
+                )
         except ApiError as e:
             self._show_status(f"⚠ Provider saved but test failed: {e}")
 
@@ -337,6 +344,7 @@ class ProviderWizardScreen(Screen[dict | None]):
 
 
 # ── Chat screen ───────────────────────────────────────────────────────────────
+
 
 class Transcript(ScrollableContainer):
     """Scrollable message log."""
@@ -376,7 +384,9 @@ class Transcript(ScrollableContainer):
 
     def add_message(self, msg: ChatMessage) -> Static:
         css_class = f"msg-{msg.role}"
-        prefix = {"user": "You", "assistant": "Vigilus", "system": "◈", "error": "✗"}.get(msg.role, msg.role)
+        prefix = {"user": "You", "assistant": "Vigilus", "system": "◈", "error": "✗"}.get(
+            msg.role, msg.role
+        )
         widget = Static(f"[bold]{prefix}:[/bold] {msg.text}", classes=css_class)
         self.mount(widget)
         self.scroll_end(animate=False)
@@ -505,7 +515,10 @@ class ChatScreen(Screen[None]):
                     yield OptionList(id="cmd-popup")
                     with Horizontal(id="compose"):
                         yield Label("> ", id="compose-prompt")
-                        yield Input(placeholder="Message Vigilus… (/ for commands, @ for operators)", id="compose-input")
+                        yield Input(
+                            placeholder="Message Vigilus… (/ for commands, @ for operators)",
+                            id="compose-input",
+                        )
                     yield Label("", id="status-bar")
         yield Footer()
 
@@ -521,7 +534,9 @@ class ChatScreen(Screen[None]):
             self._rebuild_session_list()
             if self._sessions:
                 await self._select_session(self._sessions[0])
-            self._set_status(f"Logged in as {self._username}  ·  Ctrl+N new chat  ·  F1 sessions  ·  /help for commands")
+            self._set_status(
+                f"Logged in as {self._username}  ·  Ctrl+N new chat  ·  F1 sessions  ·  /help for commands"
+            )
         except ApiError as e:
             self._set_status(f"[red]Load error: {e}[/red]")
 
@@ -569,7 +584,8 @@ class ChatScreen(Screen[None]):
             return
         query = value[1:].lower()
         matches = [
-            c for c in self._commands
+            c
+            for c in self._commands
             if c["name"].startswith(query) or query in c["summary"].lower()
         ][:8]
         if not matches:
@@ -663,9 +679,7 @@ class ChatScreen(Screen[None]):
             self.app.exit()
             return
         if cmd == "login":
-            result = await self.app.push_screen_wait(
-                ProviderWizardScreen(self._client)
-            )
+            result = await self.app.push_screen_wait(ProviderWizardScreen(self._client))
             if result:
                 self._sys_notice(f"Provider **{result['name']}** added and set as default.")
             return
@@ -833,11 +847,16 @@ class ChatScreen(Screen[None]):
         self.query_one("#status-bar", Label).update(text)
 
     def _idle_status(self) -> str:
-        name = self._active_session.get("title") or "Chat Session" if self._active_session else "no session"
+        name = (
+            self._active_session.get("title") or "Chat Session"
+            if self._active_session
+            else "no session"
+        )
         return f"Session: {name}  ·  Ctrl+N new  ·  F1 sessions  ·  /help"
 
 
 # ── Main App ───────────────────────────────────────────────────────────────────
+
 
 class VIgilusTUI(App[None]):
     """Vigilus terminal UI."""

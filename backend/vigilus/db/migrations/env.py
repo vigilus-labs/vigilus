@@ -15,8 +15,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 # Import all models so Alembic sees them
-from vigilus.db.base import Base  # noqa: E402
 from vigilus.db import models as _models  # noqa: E402, F401
+from vigilus.db.base import Base  # noqa: E402
 
 # Alembic Config object
 config = context.config

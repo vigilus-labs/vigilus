@@ -6,11 +6,12 @@ from cryptography.fernet import InvalidToken
 
 from vigilus.core.crypto import decrypt
 from vigilus.db.models import Provider, ProviderType
-from vigilus.providers.base import AgentLLM
 from vigilus.providers.anthropic_provider import AnthropicProvider
-from vigilus.providers.openai_provider import OpenAIProvider
-from vigilus.providers.openai_compat import OpenAICompatProvider
+from vigilus.providers.base import AgentLLM
 from vigilus.providers.google_provider import GoogleProvider
+from vigilus.providers.openai_compat import OpenAICompatProvider
+from vigilus.providers.openai_provider import OpenAIProvider
+
 
 def build_provider(provider_row: Provider) -> AgentLLM:
     """Build a provider instance from a DB row."""
@@ -24,16 +25,16 @@ def build_provider(provider_row: Provider) -> AgentLLM:
                 "VIGILUS_SECRET has changed since the key was saved. "
                 "Edit the provider and re-enter the API key."
             )
-        
+
     if provider_row.type == ProviderType.anthropic:
         return AnthropicProvider(
-            api_key=api_key or "sk-ant-dummy", 
-            default_model=provider_row.default_model or "claude-3-5-sonnet-20241022"
+            api_key=api_key or "sk-ant-dummy",
+            default_model=provider_row.default_model or "claude-3-5-sonnet-20241022",
         )
     elif provider_row.type == ProviderType.openai:
         return OpenAIProvider(
             api_key=api_key or "sk-dummy-key-required",
-            default_model=provider_row.default_model or "gpt-4o"
+            default_model=provider_row.default_model or "gpt-4o",
         )
     elif provider_row.type == ProviderType.openrouter:
         return OpenAICompatProvider(
@@ -61,7 +62,7 @@ def build_provider(provider_row: Provider) -> AgentLLM:
             base_url=provider_row.base_url,
             api_key=api_key,
             default_model=provider_row.default_model or "local-model",
-            extra_headers=provider_row.extra_headers
+            extra_headers=provider_row.extra_headers,
         )
     else:
         raise ValueError(

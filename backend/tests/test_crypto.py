@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import os
 
-import pytest
-
 # Ensure env is set before any vigilus imports
 os.environ.setdefault("VIGILUS_SECRET", "test-secret-key-for-vigilus-testing-1234")
 

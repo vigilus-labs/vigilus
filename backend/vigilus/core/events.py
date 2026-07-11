@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import enum
 from collections import defaultdict
-from typing import Any, Callable, Coroutine
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 import structlog
 
@@ -54,7 +55,9 @@ class EventBus:
         except ValueError:
             pass
 
-    async def publish(self, event_type: str | EventType, payload: dict[str, Any] | None = None) -> None:
+    async def publish(
+        self, event_type: str | EventType, payload: dict[str, Any] | None = None
+    ) -> None:
         """Publish an event, dispatching to all registered callbacks."""
         key = event_type.value if isinstance(event_type, EventType) else event_type
         payload = payload or {}

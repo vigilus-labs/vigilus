@@ -8,22 +8,23 @@ Adds an additive nullable ``os_version`` column to ``servers`` so OS type
 (existing ``os``) and version can be tracked separately. Both are optional and
 can be auto-filled when a scan matches the host.
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = 'c5d2b13f8e90'
-down_revision: Union[str, None] = 'b3f1a02c7e44'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "c5d2b13f8e90"
+down_revision: str | None = "b3f1a02c7e44"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     bind = op.get_bind()
     from sqlalchemy import inspect as _inspect
+
     inspector = _inspect(bind)
 
     def _has_column(table: str, col: str) -> bool:
@@ -36,6 +37,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
     from sqlalchemy import inspect as _inspect
+
     inspector = _inspect(bind)
 
     def _has_column(table: str, col: str) -> bool:

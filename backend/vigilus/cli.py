@@ -43,6 +43,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     else:
         # Fall back to creating tables directly
         import asyncio
+
         from vigilus.db.base import init_db
 
         asyncio.run(init_db())
@@ -102,13 +103,14 @@ def cmd_user(args: argparse.Namespace) -> None:
     import asyncio
     import getpass
 
-    from vigilus.config import get_settings
-    from vigilus.core.auth import hash_password
-    from vigilus.db.base import get_engine, get_session_factory, init_db
-    from vigilus.db.models import User
     from sqlalchemy import select
 
-    settings = get_settings()
+    from vigilus.config import get_settings
+    from vigilus.core.auth import hash_password
+    from vigilus.db.base import get_session_factory, init_db
+    from vigilus.db.models import User
+
+    get_settings()
 
     async def _run() -> None:
         await init_db()
@@ -183,11 +185,11 @@ def cmd_channels(args: argparse.Namespace) -> None:
     from sqlalchemy import select
 
     from vigilus.config import get_settings
-    from vigilus.core.crypto import decrypt, encrypt
+    from vigilus.core.crypto import encrypt
     from vigilus.db.base import get_session_factory, init_db
     from vigilus.db.models import ChannelAccount, ChannelConfig
 
-    settings = get_settings()
+    get_settings()
 
     async def _run() -> None:
         await init_db()
@@ -196,7 +198,10 @@ def cmd_channels(args: argparse.Namespace) -> None:
         if args.channels_command == "set-token":
             platform = args.platform
             if platform not in ("telegram", "discord"):
-                print(f"ERROR: --platform must be telegram or discord, got {platform!r}", file=sys.stderr)
+                print(
+                    f"ERROR: --platform must be telegram or discord, got {platform!r}",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
             async with factory() as session:
                 cfg = (
@@ -236,8 +241,11 @@ def cmd_channels(args: argparse.Namespace) -> None:
                     if args.label:
                         acct.label = args.label
                 await session.commit()
-            print(f"✓ Allowed {platform} user {args.user_id}"
-                  + (f" ({args.label})" if args.label else "") + ".")
+            print(
+                f"✓ Allowed {platform} user {args.user_id}"
+                + (f" ({args.label})" if args.label else "")
+                + "."
+            )
 
         elif args.channels_command == "revoke":
             platform = args.platform
@@ -251,7 +259,9 @@ def cmd_channels(args: argparse.Namespace) -> None:
                     )
                 ).scalar_one_or_none()
                 if acct is None:
-                    print(f"ERROR: no {platform} account with user-id {args.user_id}", file=sys.stderr)
+                    print(
+                        f"ERROR: no {platform} account with user-id {args.user_id}", file=sys.stderr
+                    )
                     sys.exit(1)
                 acct.allowed = False
                 await session.commit()
@@ -260,15 +270,21 @@ def cmd_channels(args: argparse.Namespace) -> None:
         elif args.channels_command == "list":
             async with factory() as session:
                 configs = (
-                    await session.execute(select(ChannelConfig).order_by(ChannelConfig.platform))
-                ).scalars().all()
+                    (await session.execute(select(ChannelConfig).order_by(ChannelConfig.platform)))
+                    .scalars()
+                    .all()
+                )
                 accounts = (
-                    await session.execute(
-                        select(ChannelAccount).order_by(
-                            ChannelAccount.platform, ChannelAccount.created_at
+                    (
+                        await session.execute(
+                            select(ChannelAccount).order_by(
+                                ChannelAccount.platform, ChannelAccount.created_at
+                            )
                         )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
 
             print("── Configured bots ──")
             if not configs:
@@ -331,7 +347,9 @@ def _update_backend_deps(backend_dir) -> None:
     import subprocess
 
     print("Installing backend dependencies...")
-    res = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "-e", str(backend_dir)])
+    res = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--quiet", "-e", str(backend_dir)]
+    )
     if res.returncode != 0:
         print("ERROR: backend dependency install failed (see output above).", file=sys.stderr)
         sys.exit(1)
@@ -367,7 +385,15 @@ def _run_migrations(backend_dir) -> None:
     # Fresh interpreter so the just-updated code (models, migration scripts)
     # is what runs — this process still has the old version imported.
     res = subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", str(backend_dir / "alembic.ini"), "upgrade", "head"],
+        [
+            sys.executable,
+            "-m",
+            "alembic",
+            "-c",
+            str(backend_dir / "alembic.ini"),
+            "upgrade",
+            "head",
+        ],
         cwd=str(backend_dir),
     )
     if res.returncode != 0:
@@ -550,7 +576,9 @@ def cmd_doctor(args: argparse.Namespace) -> None:
         print(f"  search backend  : {res['search_backend']}")
         print(f"  fetch backend   : {res['fetch_backend']}")
         if res["search_backend"] == "firecrawl" or res["fetch_backend"] == "firecrawl":
-            print(f"  firecrawl key   : {'configured' if res['firecrawl_key_configured'] else 'MISSING'}")
+            print(
+                f"  firecrawl key   : {'configured' if res['firecrawl_key_configured'] else 'MISSING'}"
+            )
         print(f"  reachable       : {'OK' if res['ok'] else 'NO'}")
         if res["detail"]:
             print(f"  -> {res['detail']}")
@@ -582,7 +610,9 @@ def main() -> None:
     )
 
     # ── chat ────────────────────────────────────────────────
-    chat_parser = subparsers.add_parser("chat", help="Start the Vigilus terminal UI (requires vigilus[tui])")
+    chat_parser = subparsers.add_parser(
+        "chat", help="Start the Vigilus terminal UI (requires vigilus[tui])"
+    )
     chat_parser.add_argument(
         "--url",
         default=None,
@@ -591,7 +621,9 @@ def main() -> None:
     )
 
     # ── user ────────────────────────────────────────────────
-    user_parser = subparsers.add_parser("user", help="User management (create, reset-password, list)")
+    user_parser = subparsers.add_parser(
+        "user", help="User management (create, reset-password, list)"
+    )
     user_subparsers = user_parser.add_subparsers(dest="user_command", help="User commands")
 
     user_create = user_subparsers.add_parser("create", help="Create a new user")
@@ -614,9 +646,13 @@ def main() -> None:
         "set-token", help="Store (encrypted) a bot token for a platform"
     )
     ct_set.add_argument("--platform", required=True, help="telegram | discord")
-    ct_set.add_argument("--token", required=True, help="Bot token from BotFather / Developer Portal")
+    ct_set.add_argument(
+        "--token", required=True, help="Bot token from BotFather / Developer Portal"
+    )
 
-    ct_allow = channels_subparsers.add_parser("allow", help="Allow a platform user to talk to Vigilus")
+    ct_allow = channels_subparsers.add_parser(
+        "allow", help="Allow a platform user to talk to Vigilus"
+    )
     ct_allow.add_argument("--platform", required=True, help="telegram | discord")
     ct_allow.add_argument("--user-id", required=True, help="External user id on that platform")
     ct_allow.add_argument("--label", default=None, help="Optional human-readable label")
@@ -635,15 +671,19 @@ def main() -> None:
         "--check", action="store_true", help="Only report whether an update is available"
     )
     update_parser.add_argument(
-        "--branch", default=None, metavar="BRANCH",
+        "--branch",
+        default=None,
+        metavar="BRANCH",
         help="Branch to update from (default: the currently checked-out branch)",
     )
     update_parser.add_argument(
-        "--force", action="store_true",
+        "--force",
+        action="store_true",
         help="Discard local changes and update even when already up to date",
     )
     update_parser.add_argument(
-        "--no-restart", action="store_true",
+        "--no-restart",
+        action="store_true",
         help="Don't restart the Vigilus service after updating",
     )
 

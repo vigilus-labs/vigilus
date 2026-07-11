@@ -21,16 +21,14 @@ On subsequent turns in the same session, rebuild only the volatile tier::
 
 from __future__ import annotations
 
-import json
-import structlog
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vigilus.db.models import Operator, Server, Session, OperatorTool
+from vigilus.db.models import Operator, OperatorTool, Server
 
 logger = structlog.get_logger(__name__)
 
@@ -158,9 +156,7 @@ class SystemPrompt:
 
     def render(self) -> str:
         """Render the full system prompt by joining non-empty tiers."""
-        return "\n\n".join(
-            part for part in [self.stable, self.context, self.volatile] if part
-        )
+        return "\n\n".join(part for part in [self.stable, self.context, self.volatile] if part)
 
 
 # ── Builder ──────────────────────────────────────────────────────────────
@@ -320,10 +316,10 @@ class PromptBuilder:
 
         lines = ["## Server inventory", ""]
         for srv in servers:
-            status_raw = srv.status.value if hasattr(srv.status, 'value') else str(srv.status or 'unknown')
-            status_icon = {"online": "🟢", "offline": "🔴", "unknown": "⚪"}.get(
-                status_raw, "⚪"
+            status_raw = (
+                srv.status.value if hasattr(srv.status, "value") else str(srv.status or "unknown")
             )
+            status_icon = {"online": "🟢", "offline": "🔴", "unknown": "⚪"}.get(status_raw, "⚪")
             os_label = " ".join(p for p in (srv.os, srv.os_version) if p)
             lines.append(
                 f"- {status_icon} **{srv.name}** ({srv.hostname}:{srv.port})"
@@ -353,7 +349,7 @@ class PromptBuilder:
             )
 
         # Timestamp — date-only for prompt cache stability
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         parts.append(f"Current date: {now.strftime('%A, %B %d, %Y')}")
 
         return "\n\n".join(parts)

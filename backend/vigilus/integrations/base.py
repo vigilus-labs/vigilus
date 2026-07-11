@@ -18,9 +18,9 @@ from typing import Any
 class InboundMessage:
     """A normalized inbound message from any channel."""
 
-    platform: str          # "telegram" | "discord"
-    chat_id: str           # conversation id (telegram chat id / discord channel id)
-    user_id: str           # external sender id (telegram id / discord snowflake)
+    platform: str  # "telegram" | "discord"
+    chat_id: str  # conversation id (telegram chat id / discord channel id)
+    user_id: str  # external sender id (telegram id / discord snowflake)
     user_name: str
     text: str
     is_group: bool = False

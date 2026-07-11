@@ -10,17 +10,18 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
-
-_BANNED_SECRETS = frozenset({
-    "changeme",
-    "secret",
-    "default",
-    "change_me",
-    "CHANGE_ME",
-    "password",
-    "PASSWORD",
-    "",
-})
+_BANNED_SECRETS = frozenset(
+    {
+        "changeme",
+        "secret",
+        "default",
+        "change_me",
+        "CHANGE_ME",
+        "password",
+        "PASSWORD",
+        "",
+    }
+)
 
 
 class Settings(BaseSettings):
@@ -69,38 +70,38 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
 
     # ── Auth ────────────────────────────────────────────────
-    auth_token_ttl_hours: int = 168          # 7 days
+    auth_token_ttl_hours: int = 168  # 7 days
     auth_cookie_name: str = "vigilus_token"
-    auth_cookie_secure: bool = False         # set True behind HTTPS/reverse proxy
+    auth_cookie_secure: bool = False  # set True behind HTTPS/reverse proxy
     auth_max_login_failures: int = 5
     auth_lockout_minutes: int = 5
 
     # ── Channels (gateway) ───────────────────────────────────
-    channels_enabled: bool = True            # master switch for the gateway
-    telegram_bot_token: str | None = None    # env fallback; DB config wins
-    discord_bot_token: str | None = None     # env fallback; DB config wins
+    channels_enabled: bool = True  # master switch for the gateway
+    telegram_bot_token: str | None = None  # env fallback; DB config wins
+    discord_bot_token: str | None = None  # env fallback; DB config wins
 
     # ── Search / research ───────────────────────────────────
     # Vigilus-only web search + page fetch. Operators never get web tools.
     search_enabled: bool = True
     search_backend: Literal["searxng", "firecrawl"] = "searxng"
     fetch_backend: Literal["builtin", "firecrawl"] = "builtin"
-    searxng_url: str | None = None               # e.g. http://searxng.lan:8080
-    firecrawl_api_key: str | None = None         # env fallback; DB config wins
+    searxng_url: str | None = None  # e.g. http://searxng.lan:8080
+    firecrawl_api_key: str | None = None  # env fallback; DB config wins
     search_max_results: int = 5
-    web_fetch_max_bytes: int = 2_000_000         # builtin fetcher: hard download cap
+    web_fetch_max_bytes: int = 2_000_000  # builtin fetcher: hard download cap
     web_fetch_timeout_seconds: int = 15
-    search_rate_limit_per_min: int = 20          # per session (Vigilus principal)
+    search_rate_limit_per_min: int = 20  # per session (Vigilus principal)
     # SSRF policy (decision #4: private fetch OFF)
-    web_fetch_allow_private: bool = False        # block RFC1918/loopback/metadata
+    web_fetch_allow_private: bool = False  # block RFC1918/loopback/metadata
     web_fetch_allowed_schemes: list[str] = ["http", "https"]
 
     # ── Updates ─────────────────────────────────────────────
     # Outbound check against the published GitHub releases. Opt-out for
     # privacy; the only network call is an unauthenticated GET to api.github.com.
     update_check_enabled: bool = Field(default=True, validation_alias="VIGILUS_UPDATE_CHECK")
-    update_repo: str = "vigilus-labs/vigilus"        # owner/name for releases + GHCR image
-    update_check_interval_hours: int = 6             # in-process cache TTL
+    update_repo: str = "vigilus-labs/vigilus"  # owner/name for releases + GHCR image
+    update_check_interval_hours: int = 6  # in-process cache TTL
 
     # ── Logging ─────────────────────────────────────────────
     log_level: str = "INFO"
@@ -119,7 +120,7 @@ class Settings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def _ensure_data_dir_set(self) -> "Settings":
+    def _ensure_data_dir_set(self) -> Settings:
         return self
 
     # ── Derived helpers ─────────────────────────────────────

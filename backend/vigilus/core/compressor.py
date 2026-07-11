@@ -22,8 +22,9 @@ Usage::
 from __future__ import annotations
 
 import json
-import structlog
 from typing import Any
+
+import structlog
 
 from vigilus.providers.base import LLMMessage
 

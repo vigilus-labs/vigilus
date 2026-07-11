@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import stat
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 CONFIG_DIR = Path.home() / ".config" / "vigilus"
@@ -43,8 +43,8 @@ def get_token() -> str | None:
     try:
         exp = datetime.fromisoformat(expires)
         if exp.tzinfo is None:
-            exp = exp.replace(tzinfo=timezone.utc)
-        if exp > datetime.now(timezone.utc):
+            exp = exp.replace(tzinfo=UTC)
+        if exp > datetime.now(UTC):
             return token
     except Exception:
         pass
@@ -53,7 +53,9 @@ def get_token() -> str | None:
 
 def save_token(token: str, expires_at: str, username: str, base_url: str) -> None:
     cfg = load_config()
-    cfg.update({"token": token, "expires_at": expires_at, "username": username, "base_url": base_url})
+    cfg.update(
+        {"token": token, "expires_at": expires_at, "username": username, "base_url": base_url}
+    )
     save_config(cfg)
 
 

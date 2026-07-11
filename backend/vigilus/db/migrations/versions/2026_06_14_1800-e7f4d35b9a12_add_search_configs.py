@@ -9,17 +9,17 @@ Adds the ``search_configs`` table backing Vigilus-only web research
 backends are active, the SearXNG URL, and the Fernet-encrypted Firecrawl API
 key. Guarded/idempotent like the other migrations.
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = 'e7f4d35b9a12'
-down_revision: Union[str, None] = 'd6e3c24a9f01'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "e7f4d35b9a12"
+down_revision: str | None = "d6e3c24a9f01"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def _has_table(bind, name: str) -> bool:

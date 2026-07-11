@@ -8,22 +8,23 @@ Adds ``scope_mode`` to ``jit_requests`` so an approval can be single-use
 ("once") or reusable for its TTL ("timed"). Existing rows default to "timed",
 matching prior behavior.
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = 'd6e3c24a9f01'
-down_revision: Union[str, None] = 'c5d2b13f8e90'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "d6e3c24a9f01"
+down_revision: str | None = "c5d2b13f8e90"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     bind = op.get_bind()
     from sqlalchemy import inspect as _inspect
+
     inspector = _inspect(bind)
 
     def _has_column(table: str, col: str) -> bool:
@@ -39,6 +40,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
     from sqlalchemy import inspect as _inspect
+
     inspector = _inspect(bind)
 
     def _has_column(table: str, col: str) -> bool:

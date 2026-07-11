@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -51,6 +51,7 @@ def _client_ip(request: Request) -> str:
 
 # ── GET /auth/setup ───────────────────────────────────────────────────────────
 
+
 @router.get("/setup")
 async def get_setup_status(db: AsyncSession = Depends(get_db)):
     count = await db.scalar(select(func.count()).select_from(User))
@@ -58,6 +59,7 @@ async def get_setup_status(db: AsyncSession = Depends(get_db)):
 
 
 # ── POST /auth/setup ──────────────────────────────────────────────────────────
+
 
 @router.post("/setup", response_model=AuthUserResponse)
 async def setup_first_user(
@@ -73,7 +75,7 @@ async def setup_first_user(
     user = User(
         username=data.username,
         password_hash=hash_password(data.password),
-        last_login_at=datetime.now(timezone.utc),
+        last_login_at=datetime.now(UTC),
     )
     db.add(user)
     await db.commit()
@@ -86,6 +88,7 @@ async def setup_first_user(
 
 
 # ── POST /auth/login ──────────────────────────────────────────────────────────
+
 
 async def _authenticate(data: LoginRequest, request: Request, db: AsyncSession) -> User:
     """Verify credentials with rate limiting; raises HTTPException on failure."""
@@ -113,7 +116,7 @@ async def _authenticate(data: LoginRequest, request: Request, db: AsyncSession) 
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
     login_limiter.record_success(data.username, ip)
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(user)
     return user
@@ -135,6 +138,7 @@ async def login(
 
 # ── POST /auth/token ──────────────────────────────────────────────────────────
 
+
 @router.post("/token", response_model=TokenResponse)
 async def issue_token(
     data: LoginRequest,
@@ -149,12 +153,13 @@ async def issue_token(
     user = await _authenticate(data, request, db)
     token = create_token(user.id, user.token_version)
     settings = get_settings()
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.auth_token_ttl_hours)
+    expires_at = datetime.now(UTC) + timedelta(hours=settings.auth_token_ttl_hours)
     logger.info("auth.token_issued", username=user.username, ip=_client_ip(request))
     return TokenResponse(token=token, expires_at=expires_at, username=user.username)
 
 
 # ── POST /auth/logout ─────────────────────────────────────────────────────────
+
 
 @router.post("/logout", status_code=204)
 async def logout(
@@ -173,12 +178,14 @@ async def logout(
 
 # ── GET /auth/me ──────────────────────────────────────────────────────────────
 
+
 @router.get("/me", response_model=AuthUserResponse)
 async def get_me(user: User = Depends(require_user)):
     return AuthUserResponse.model_validate(user)
 
 
 # ── POST /auth/change-password ────────────────────────────────────────────────
+
 
 @router.post("/change-password", status_code=204)
 async def change_password(

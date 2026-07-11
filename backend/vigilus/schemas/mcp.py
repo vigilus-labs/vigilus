@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from vigilus.core.command import parse_command_argv
-from vigilus.db.models import McpServerStatus, McpTransport
+from vigilus.db.models import McpServerStatus
 
 # A github_url is later handed to `git clone`. git treats certain URL forms as
 # code, not data: the `transport::address` helper syntax (e.g. `ext::sh -c ...`)
@@ -51,8 +51,7 @@ def validate_github_url(url: str | None) -> str | None:
     if _GIT_SAFE_SCHEME.match(url) or _GIT_SCP_LIKE.match(url):
         return url
     raise ValueError(
-        "github_url must be an http(s), git, or ssh URL "
-        "(e.g. https://github.com/owner/repo.git)"
+        "github_url must be an http(s), git, or ssh URL " "(e.g. https://github.com/owner/repo.git)"
     )
 
 
@@ -66,15 +65,13 @@ class McpServerCreate(BaseModel):
     args: list[str] = Field(default_factory=list)
     env_vars: dict[str, Any] = Field(default_factory=dict)
     transport: Literal["stdio", "sse"] = "stdio"
-    sse_url: Optional[str] = None
+    sse_url: str | None = None
     autostart: bool = False
-    github_url: Optional[str] = None
-    install_command: Optional[str] = None
-    working_dir: Optional[str] = None
+    github_url: str | None = None
+    install_command: str | None = None
+    working_dir: str | None = None
 
-    _check_github_url = field_validator("github_url")(
-        lambda cls, v: validate_github_url(v)
-    )
+    _check_github_url = field_validator("github_url")(lambda cls, v: validate_github_url(v))
     _check_install_command = field_validator("install_command")(
         lambda cls, v: validate_install_command(v)
     )
@@ -89,16 +86,14 @@ class McpServerUpdate(BaseModel):
     command: str | None = None
     args: list[str] | None = None
     env_vars: dict[str, Any] | None = None
-    transport: Optional[Literal["stdio", "sse"]] = None
-    sse_url: Optional[str] = None
+    transport: Literal["stdio", "sse"] | None = None
+    sse_url: str | None = None
     autostart: bool | None = None
-    github_url: Optional[str] = None
-    install_command: Optional[str] = None
-    working_dir: Optional[str] = None
+    github_url: str | None = None
+    install_command: str | None = None
+    working_dir: str | None = None
 
-    _check_github_url = field_validator("github_url")(
-        lambda cls, v: validate_github_url(v)
-    )
+    _check_github_url = field_validator("github_url")(lambda cls, v: validate_github_url(v))
     _check_install_command = field_validator("install_command")(
         lambda cls, v: validate_install_command(v)
     )
@@ -115,12 +110,12 @@ class McpServerResponse(BaseModel):
     args: list[str] = Field(default_factory=list)
     env_vars: dict[str, Any] = Field(default_factory=dict)
     transport: str
-    sse_url: Optional[str] = None
+    sse_url: str | None = None
     status: str = McpServerStatus.stopped
     autostart: bool = False
-    github_url: Optional[str] = None
-    install_command: Optional[str] = None
-    working_dir: Optional[str] = None
+    github_url: str | None = None
+    install_command: str | None = None
+    working_dir: str | None = None
     last_started_at: datetime | None = None
     last_error: str | None = None
     created_at: datetime

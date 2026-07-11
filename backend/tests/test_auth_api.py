@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 VALID_USER = {"username": "admin", "password": "strongpassword1"}
@@ -18,6 +17,7 @@ async def _setup(client):
 
 # ── Unauthenticated access ────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_protected_route_requires_auth(unauthenticated_client):
     r = await unauthenticated_client.get("/api/providers")
@@ -25,6 +25,7 @@ async def test_protected_route_requires_auth(unauthenticated_client):
 
 
 # ── Setup flow ────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_setup_status_empty_db(unauthenticated_client):
@@ -64,6 +65,7 @@ async def test_setup_weak_password_returns_422(unauthenticated_client):
 
 
 # ── Login / logout ────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_login_wrong_password_returns_401(unauthenticated_client):
@@ -111,6 +113,7 @@ async def test_logout_clears_cookie(unauthenticated_client):
 
 
 # ── Change password ───────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_change_password_wrong_current_returns_401(unauthenticated_client):

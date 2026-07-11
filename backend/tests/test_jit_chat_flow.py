@@ -49,9 +49,11 @@ async def test_denied_call_creates_pending_jit(denied_setup, db_session):
     assert result.success is False
     assert "approval" in (result.error or "").lower()
 
-    reqs = (await db_session.execute(
-        select(JitRequest).where(JitRequest.operator_id == op.id)
-    )).scalars().all()
+    reqs = (
+        (await db_session.execute(select(JitRequest).where(JitRequest.operator_id == op.id)))
+        .scalars()
+        .all()
+    )
     assert len(reqs) == 1
     assert reqs[0].status == JitStatus.pending
 
@@ -65,9 +67,9 @@ async def test_retry_after_approval_succeeds(denied_setup, db_session):
     result = await registry.execute(tool.name, {"path": path}, operator=op, jit_wait_seconds=0)
     assert result.success is False
 
-    req = (await db_session.execute(
-        select(JitRequest).where(JitRequest.operator_id == op.id)
-    )).scalar_one()
+    req = (
+        await db_session.execute(select(JitRequest).where(JitRequest.operator_id == op.id))
+    ).scalar_one()
 
     # 2. User approves (inline in chat → same API the JIT page uses)
     from vigilus.core.rbac import WardenService
@@ -86,9 +88,9 @@ async def test_retry_after_denial_still_denied(denied_setup, db_session):
     registry = ToolRegistry()
 
     await registry.execute(tool.name, {"path": path}, operator=op, jit_wait_seconds=0)
-    req = (await db_session.execute(
-        select(JitRequest).where(JitRequest.operator_id == op.id)
-    )).scalar_one()
+    req = (
+        await db_session.execute(select(JitRequest).where(JitRequest.operator_id == op.id))
+    ).scalar_one()
 
     from vigilus.core.rbac import WardenService
 
@@ -140,20 +142,24 @@ async def test_execution_pauses_until_approved(denied_setup, db_session):
         for _ in range(60):
             await asyncio.sleep(0.05)
             async with factory() as adb:
-                req = (await adb.execute(
-                    select(JitRequest).where(
-                        JitRequest.operator_id == op.id,
-                        JitRequest.status == JitStatus.pending,
+                req = (
+                    (
+                        await adb.execute(
+                            select(JitRequest).where(
+                                JitRequest.operator_id == op.id,
+                                JitRequest.status == JitStatus.pending,
+                            )
+                        )
                     )
-                )).scalars().first()
+                    .scalars()
+                    .first()
+                )
                 if req:
                     await WardenService().approve_request(adb, req.id, approver="test-user")
                     return
 
     approver = asyncio.create_task(approve_when_pending())
-    result = await registry.execute(
-        tool.name, {"path": path}, operator=op, jit_wait_seconds=10
-    )
+    result = await registry.execute(tool.name, {"path": path}, operator=op, jit_wait_seconds=10)
     await approver
 
     assert result.success is True, result.error
@@ -175,20 +181,24 @@ async def test_execution_pauses_until_denied(denied_setup, db_session):
         for _ in range(60):
             await asyncio.sleep(0.05)
             async with factory() as adb:
-                req = (await adb.execute(
-                    select(JitRequest).where(
-                        JitRequest.operator_id == op.id,
-                        JitRequest.status == JitStatus.pending,
+                req = (
+                    (
+                        await adb.execute(
+                            select(JitRequest).where(
+                                JitRequest.operator_id == op.id,
+                                JitRequest.status == JitStatus.pending,
+                            )
+                        )
                     )
-                )).scalars().first()
+                    .scalars()
+                    .first()
+                )
                 if req:
                     await WardenService().deny_request(adb, req.id, approver="test-user")
                     return
 
     denier = asyncio.create_task(deny_when_pending())
-    result = await registry.execute(
-        tool.name, {"path": path}, operator=op, jit_wait_seconds=10
-    )
+    result = await registry.execute(tool.name, {"path": path}, operator=op, jit_wait_seconds=10)
     await denier
 
     assert result.success is False

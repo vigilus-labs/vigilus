@@ -82,9 +82,15 @@ async def memory_forget(
         if memory and memory.scope not in reachable:
             return {"error": "Memory not found in your scopes."}
     else:
-        memory = (await db.execute(
-            select(Memory).where(Memory.scope.in_(reachable), Memory.content == content)
-        )).scalars().first()
+        memory = (
+            (
+                await db.execute(
+                    select(Memory).where(Memory.scope.in_(reachable), Memory.content == content)
+                )
+            )
+            .scalars()
+            .first()
+        )
 
     if not memory:
         return {"error": "Memory not found."}

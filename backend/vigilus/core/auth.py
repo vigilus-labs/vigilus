@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from argon2 import PasswordHasher
@@ -43,7 +43,7 @@ def dummy_verify() -> None:
 
 def create_token(user_id: str, token_version: int) -> str:
     settings = get_settings()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": user_id,
         "ver": token_version,
@@ -81,7 +81,7 @@ class LoginRateLimiter:
         if entry is None:
             return True
         locked_until = entry.get("locked_until")
-        if locked_until and datetime.now(timezone.utc) < locked_until:
+        if locked_until and datetime.now(UTC) < locked_until:
             return False
         return True
 
@@ -90,12 +90,12 @@ class LoginRateLimiter:
         key = self._key(username, ip)
         entry = self._data.setdefault(key, {"count": 0, "locked_until": None})
         # Clear expired lockout before counting
-        if entry["locked_until"] and datetime.now(timezone.utc) >= entry["locked_until"]:
+        if entry["locked_until"] and datetime.now(UTC) >= entry["locked_until"]:
             entry["count"] = 0
             entry["locked_until"] = None
         entry["count"] += 1
         if entry["count"] >= settings.auth_max_login_failures:
-            entry["locked_until"] = datetime.now(timezone.utc) + timedelta(
+            entry["locked_until"] = datetime.now(UTC) + timedelta(
                 minutes=settings.auth_lockout_minutes
             )
 

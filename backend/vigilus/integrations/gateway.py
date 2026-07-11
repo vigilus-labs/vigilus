@@ -53,10 +53,14 @@ class GatewayManager:
         factory = get_session_factory()
         async with factory() as db:
             return (
-                await db.execute(
-                    select(ChannelConfig).where(ChannelConfig.enabled == True)  # noqa: E712
+                (
+                    await db.execute(
+                        select(ChannelConfig).where(ChannelConfig.enabled == True)  # noqa: E712
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
     def _resolve_tokens(
         self, configs: list[ChannelConfig]
@@ -124,7 +128,9 @@ class GatewayManager:
                 await warden.approve_request(db, request_id, approver=approver)
             else:
                 await warden.deny_request(db, request_id, approver=approver)
-        logger.info("gateway.jit_resolved", request_id=request_id, approved=approved, approver=approver)
+        logger.info(
+            "gateway.jit_resolved", request_id=request_id, approved=approved, approver=approver
+        )
 
     def responds_in_groups(self, platform: str) -> bool:
         """Whether a platform is configured to answer in groups without a mention."""

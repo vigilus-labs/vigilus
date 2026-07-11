@@ -6,7 +6,6 @@ from zoneinfo import ZoneInfo
 
 from vigilus.core.scheduler import next_fire_time, validate_cron
 
-
 VALID_TASK = {
     "name": "Daily security summary",
     "description": "Summarize Wazuh alerts every morning",

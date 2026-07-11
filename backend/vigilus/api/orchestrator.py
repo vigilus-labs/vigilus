@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from vigilus.core.orchestrator import (
+    load_orchestrator_config,
+    save_orchestrator_config,
+)
 from vigilus.db.base import get_db
 from vigilus.db.models import Provider
-from vigilus.core.orchestrator import load_orchestrator_config, save_orchestrator_config, OrchestratorConfig
 
 router = APIRouter(prefix="/orchestrator", tags=["Orchestrator"])
 
@@ -40,7 +42,9 @@ async def get_orchestrator_config():
 
 
 @router.patch("", response_model=OrchestratorConfigResponse)
-async def update_orchestrator_config(data: OrchestratorConfigUpdate, db: AsyncSession = Depends(get_db)):
+async def update_orchestrator_config(
+    data: OrchestratorConfigUpdate, db: AsyncSession = Depends(get_db)
+):
     """Update the Vigilus orchestrator configuration.
 
     If provider_id is changed, verify it exists.
@@ -82,6 +86,7 @@ async def update_orchestrator_config(data: OrchestratorConfigUpdate, db: AsyncSe
     if data.system_prompt is not None:
         # If it's different from the default, treat it as a custom identity override
         from vigilus.core.prompt_builder import DEFAULT_IDENTITY
+
         if data.system_prompt and data.system_prompt != DEFAULT_IDENTITY:
             cfg.custom_identity = data.system_prompt
 

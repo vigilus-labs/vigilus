@@ -90,16 +90,21 @@ class VIgilusClient:
         return await self._req("GET", f"/sessions/{session_id}/messages")
 
     async def send_message(self, session_id: str, content: str) -> dict:
-        return await self._req("POST", f"/sessions/{session_id}/messages", json={"content": content})
+        return await self._req(
+            "POST", f"/sessions/{session_id}/messages", json={"content": content}
+        )
 
     # ── Commands ──────────────────────────────────────────────────────────────
 
     async def list_commands(self) -> list[dict]:
         return await self._req("GET", "/commands")
 
-    async def run_command(self, command: str, args: str = "", session_id: str | None = None) -> dict:
+    async def run_command(
+        self, command: str, args: str = "", session_id: str | None = None
+    ) -> dict:
         return await self._req(
-            "POST", "/commands/run",
+            "POST",
+            "/commands/run",
             json={"command": command, "args": args, "session_id": session_id},
         )
 

@@ -127,8 +127,10 @@ async def hosts(db: SessionDep) -> list[ScopeHostNode]:
     servers = (await db.execute(select(Server))).scalars().all()
     # Latest DiscoveredHost per IP (ordered so the first seen wins the dedupe).
     dh_rows = (
-        await db.execute(select(DiscoveredHost).order_by(DiscoveredHost.last_seen.desc()))
-    ).scalars().all()
+        (await db.execute(select(DiscoveredHost).order_by(DiscoveredHost.last_seen.desc())))
+        .scalars()
+        .all()
+    )
 
     # Preload scans + roles once to avoid N+1 lookups while building nodes.
     scans_by_id = {s.id: s for s in (await db.execute(select(Scan))).scalars().all()}
@@ -224,10 +226,10 @@ async def inventory(db: SessionDep) -> list[ScopeInventoryHost]:
     metadata; ``first_seen`` reaches back to the earliest sighting.
     """
     rows = (
-        await db.execute(
-            select(DiscoveredHost).order_by(DiscoveredHost.last_seen.desc())
-        )
-    ).scalars().all()
+        (await db.execute(select(DiscoveredHost).order_by(DiscoveredHost.last_seen.desc())))
+        .scalars()
+        .all()
+    )
 
     # Dedupe by IP: first row wins (latest last_seen), but fold in the earliest
     # first_seen across all sightings of the same IP.
@@ -243,12 +245,16 @@ async def inventory(db: SessionDep) -> list[ScopeInventoryHost]:
     out: list[ScopeInventoryHost] = []
     for ip, h in latest.items():
         svc_rows = (
-            await db.execute(
-                select(DiscoveredService)
-                .where(DiscoveredService.discovered_host_id == h.id)
-                .order_by(DiscoveredService.port)
+            (
+                await db.execute(
+                    select(DiscoveredService)
+                    .where(DiscoveredService.discovered_host_id == h.id)
+                    .order_by(DiscoveredService.port)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         services = [
             f"{s.port}/{s.proto}" + (f" {s.service}" if s.service else "") for s in svc_rows
         ]
@@ -301,10 +307,14 @@ async def delete_inventory(req: ScopeDeleteRequest, db: SessionDep) -> ScopeDele
         raise HTTPException(status_code=400, detail="No IPs provided")
 
     host_ids = (
-        await db.execute(select(DiscoveredHost.id).where(DiscoveredHost.ip.in_(ips)))
-    ).scalars().all()
+        (await db.execute(select(DiscoveredHost.id).where(DiscoveredHost.ip.in_(ips))))
+        .scalars()
+        .all()
+    )
     if not host_ids:
-        return ScopeDeleteResult(deleted_ips=[], deleted_hosts=0, deleted_services=0, deleted_findings=0)
+        return ScopeDeleteResult(
+            deleted_ips=[], deleted_hosts=0, deleted_services=0, deleted_findings=0
+        )
 
     # Findings: those bound to the discovered hosts, plus bare-IP scan findings
     # (no server/host FK) keyed on the IP. Managed-server findings are spared.
@@ -327,9 +337,7 @@ async def delete_inventory(req: ScopeDeleteRequest, db: SessionDep) -> ScopeDele
         )
     ).scalar() or 0
     await db.execute(
-        sa_delete(DiscoveredService).where(
-            DiscoveredService.discovered_host_id.in_(host_ids)
-        )
+        sa_delete(DiscoveredService).where(DiscoveredService.discovered_host_id.in_(host_ids))
     )
 
     await db.execute(sa_delete(DiscoveredHost).where(DiscoveredHost.id.in_(host_ids)))
@@ -368,9 +376,7 @@ async def promote_hosts(req: ScopePromoteRequest, db: SessionDep) -> ScopePromot
     already_managed: list[str] = []
     invalid: list[str] = []
 
-    existing_names = set(
-        (await db.execute(select(Server.name))).scalars().all()
-    )
+    existing_names = set((await db.execute(select(Server.name))).scalars().all())
 
     for ip in dict.fromkeys(requested):  # de-dupe, preserve order
         try:
@@ -387,14 +393,18 @@ async def promote_hosts(req: ScopePromoteRequest, db: SessionDep) -> ScopePromot
             continue
 
         dhost = (
-            await db.execute(
-                select(DiscoveredHost)
-                .where(DiscoveredHost.ip == ip)
-                .order_by(DiscoveredHost.last_seen.desc())
+            (
+                await db.execute(
+                    select(DiscoveredHost)
+                    .where(DiscoveredHost.ip == ip)
+                    .order_by(DiscoveredHost.last_seen.desc())
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
 
-        base_name = (dhost.hostname if dhost and dhost.hostname else ip)
+        base_name = dhost.hostname if dhost and dhost.hostname else ip
         name = base_name
         suffix = 2
         while name in existing_names:
@@ -456,9 +466,7 @@ async def findings_severity(db: SessionDep) -> list[ScopeSeverityBucket]:
             select(Finding.severity, func.count(Finding.id)).group_by(Finding.severity)
         )
     ).all()
-    return [
-        ScopeSeverityBucket(severity=s.value if s else "info", count=c) for s, c in rows
-    ]
+    return [ScopeSeverityBucket(severity=s.value if s else "info", count=c) for s, c in rows]
 
 
 @router.get("/ports/distribution", response_model=list[ScopePortBucket])
@@ -583,12 +591,16 @@ async def host_detail(identity: str, db: SessionDep) -> ScopeHostDetail:
     # detail panel shows ports (from the discovered host) AND actions (from the server).
     if server is not None and dhost is None and server.ip:
         dhost = (
-            await db.execute(
-                select(DiscoveredHost)
-                .where(DiscoveredHost.ip == server.ip)
-                .order_by(DiscoveredHost.last_seen.desc())
+            (
+                await db.execute(
+                    select(DiscoveredHost)
+                    .where(DiscoveredHost.ip == server.ip)
+                    .order_by(DiscoveredHost.last_seen.desc())
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
     if dhost is not None and server is None and dhost.ip:
         server = (
             await db.execute(select(Server).where(Server.ip == dhost.ip))
@@ -626,12 +638,16 @@ async def host_detail(identity: str, db: SessionDep) -> ScopeHostDetail:
     ports: list[ScopePort] = []
     if dhost_id:
         svc_rows = (
-            await db.execute(
-                select(DiscoveredService).where(
-                    DiscoveredService.discovered_host_id == dhost_id
+            (
+                await db.execute(
+                    select(DiscoveredService).where(
+                        DiscoveredService.discovered_host_id == dhost_id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         ports = [
             ScopePort(
                 port=s.port,
@@ -655,10 +671,14 @@ async def host_detail(identity: str, db: SessionDep) -> ScopeHostDetail:
     findings: list[ScopeFinding] = []
     if host_keys:
         f_rows = (
-            await db.execute(
-                select(Finding).where(or_(*host_keys)).order_by(Finding.last_seen.desc())
+            (
+                await db.execute(
+                    select(Finding).where(or_(*host_keys)).order_by(Finding.last_seen.desc())
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         findings = [
             ScopeFinding(
                 id=f.id,
@@ -680,13 +700,17 @@ async def host_detail(identity: str, db: SessionDep) -> ScopeHostDetail:
     recent_actions: list[dict[str, Any]] = []
     if server_id:
         a_rows = (
-            await db.execute(
-                select(Action)
-                .where(Action.server_id == server_id)
-                .order_by(Action.created_at.desc())
-                .limit(10)
+            (
+                await db.execute(
+                    select(Action)
+                    .where(Action.server_id == server_id)
+                    .order_by(Action.created_at.desc())
+                    .limit(10)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         recent_actions = [
             {
                 "id": a.id,

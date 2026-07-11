@@ -15,7 +15,7 @@ class ScopeOverview(BaseModel):
 
     managed: int
     discovered_unique: int
-    unmanaged: int          # discovered but not matched to inventory
+    unmanaged: int  # discovered but not matched to inventory
     open_ports: int
     findings: int
 
@@ -25,19 +25,19 @@ class ScopeHostNode(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: str                 # server id (managed) or discovered host id (scan-only)
+    id: str  # server id (managed) or discovered host id (scan-only)
     label: str
     ip: str | None = None
     hostname: str | None = None
     os: str | None = None
     status: str | None = None
-    origins: list[str] = []           # managed | discovered | monitored
+    origins: list[str] = []  # managed | discovered | monitored
     managed: bool = False
     discovered_host_id: str | None = None
     finding_count: int = 0
     open_port_count: int = 0
-    monitored: bool = False           # has wazuh-sourced findings
-    segment: str | None = None        # computed subnet CIDR, e.g. "10.0.0.0/24"
+    monitored: bool = False  # has wazuh-sourced findings
+    segment: str | None = None  # computed subnet CIDR, e.g. "10.0.0.0/24"
     is_gateway: bool = False
     is_dns: bool = False
     is_switch: bool = False
@@ -114,7 +114,7 @@ class ScopeInventoryHost(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    discovered_host_id: str        # latest discovered-host row for this IP
+    discovered_host_id: str  # latest discovered-host row for this IP
     ip: str
     hostname: str | None = None
     mac: str | None = None
@@ -123,7 +123,7 @@ class ScopeInventoryHost(BaseModel):
     managed: bool = False
     open_port_count: int = 0
     finding_count: int = 0
-    services: list[str] = []       # e.g. ["22/tcp ssh", "443/tcp https"]
+    services: list[str] = []  # e.g. ["22/tcp ssh", "443/tcp https"]
     scan_target: str | None = None
     first_seen: datetime | None = None
     last_seen: datetime | None = None
@@ -194,6 +194,6 @@ class ScopePromoteRequest(BaseModel):
 
 
 class ScopePromoteResult(BaseModel):
-    created: list[str]            # IPs a new Server row was created for
-    already_managed: list[str]    # IPs that already had a matching Server
-    invalid: list[str]            # IPs that didn't parse and were skipped
+    created: list[str]  # IPs a new Server row was created for
+    already_managed: list[str]  # IPs that already had a matching Server
+    invalid: list[str]  # IPs that didn't parse and were skipped

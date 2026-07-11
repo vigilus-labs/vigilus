@@ -1,9 +1,8 @@
 """Tests for SSE streaming helpers."""
 
-import asyncio
 import pytest
 
-from vigilus.api.sse import SSEEvent, StreamBridge, register_bridge, unregister_bridge, get_bridge
+from vigilus.api.sse import SSEEvent, StreamBridge, get_bridge, register_bridge, unregister_bridge
 
 
 def test_sse_event_encode():
@@ -17,7 +16,7 @@ def test_sse_event_encode_empty_data():
     """SSEEvent with empty data."""
     event = SSEEvent(event="done", data={})
     encoded = event.encode()
-    assert encoded == 'event: done\ndata: {}\n\n'
+    assert encoded == "event: done\ndata: {}\n\n"
 
 
 @pytest.mark.asyncio

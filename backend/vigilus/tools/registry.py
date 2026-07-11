@@ -4,19 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import time
 import json
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 import structlog
 from sqlalchemy import select
 
-from vigilus.providers.base import ToolSpec
-from vigilus.core.rbac import PolicyEngine, Permission
-from vigilus.db.models import ActionOutcome, Action, Tool, Operator, ToolImplementationType
+from vigilus.core.rbac import Permission, PolicyEngine
 from vigilus.db.base import get_session_factory
-from vigilus.core.events import EventBus
+from vigilus.db.models import Action, ActionOutcome, Operator, Tool, ToolImplementationType
 
 logger = structlog.get_logger(__name__)
 
@@ -24,6 +23,7 @@ logger = structlog.get_logger(__name__)
 @dataclass
 class ToolResult:
     """Result of executing a tool."""
+
     success: bool = True
     output: str = ""
     error: str | None = None
@@ -36,6 +36,7 @@ class ToolRegistry:
     def __init__(self):
         self.policy_engine = PolicyEngine()
         from vigilus.core.events import get_event_bus
+
         self.event_bus = get_event_bus()
         self.session_factory = get_session_factory()
 
@@ -69,9 +70,7 @@ class ToolRegistry:
         if jit_wait_seconds is None:
             settings = get_settings()
             jit_wait_seconds = (
-                settings.jit_wait_seconds_unattended
-                if unattended
-                else settings.jit_wait_seconds
+                settings.jit_wait_seconds_unattended if unattended else settings.jit_wait_seconds
             )
         start_time = time.time()
 
@@ -104,6 +103,7 @@ class ToolRegistry:
             token_obj = None
             if jit_token:
                 from vigilus.core.rbac import WardenService
+
                 token_obj = WardenService().validate_token(jit_token)
 
             is_allowed = await self.policy_engine.check_permission(
@@ -152,8 +152,11 @@ class ToolRegistry:
 
                 # Request JIT
                 from vigilus.core.rbac import WardenService
+
                 warden = WardenService()
-                task_description = f"Run {tool.name} with args {json.dumps(arguments, default=str)[:500]}"
+                task_description = (
+                    f"Run {tool.name} with args {json.dumps(arguments, default=str)[:500]}"
+                )
                 req, token = await warden.request_jit(
                     db, operator, resource, req_perm, task_description
                 )
@@ -263,7 +266,9 @@ class ToolRegistry:
                     res = await handler_func(**call_kwargs)
                     # Handlers should return a dict; serialize to string for LLM
                     if isinstance(res, dict):
-                        result_obj = ToolResult(success=True, output=json.dumps(res, default=str, indent=2))
+                        result_obj = ToolResult(
+                            success=True, output=json.dumps(res, default=str, indent=2)
+                        )
                     else:
                         result_obj = ToolResult(success=True, output=str(res))
 
@@ -442,6 +447,7 @@ class ToolRegistry:
             import_module = f"vigilus.tools.native.{module_path}"
 
         import importlib
+
         module = importlib.import_module(import_module)
         func = getattr(module, func_name)
         return func
@@ -449,6 +455,7 @@ class ToolRegistry:
     async def _execute_http(self, tool: Tool, arguments: dict[str, Any]) -> ToolResult:
         """Execute an HTTP-based tool."""
         import httpx
+
         config = tool.http_config or {}
         url = config.get("url", "")
         method = config.get("method", "GET")
@@ -467,6 +474,7 @@ class ToolRegistry:
     async def _execute_mcp(self, tool: Tool, arguments: dict[str, Any]) -> ToolResult:
         """Execute an MCP-based tool."""
         from vigilus.mcp_host.manager import McpManager
+
         manager = McpManager()
         try:
             mcp_res = await manager.call_tool(tool.mcp_server_id, tool.mcp_tool_name, arguments)
@@ -502,7 +510,11 @@ class ToolRegistry:
                 "scope.auto_ingest",
                 source_tool=tool_name,
                 scan_target=target,
-                **{k: v for k, v in summary.items() if isinstance(v, (str, int, float)) and k != "target"},
+                **{
+                    k: v
+                    for k, v in summary.items()
+                    if isinstance(v, (str, int, float)) and k != "target"
+                },
             )
         except Exception:  # noqa: BLE001
             logger.exception("scope.auto_ingest_failed", source_tool=tool_name)

@@ -2,16 +2,23 @@ import asyncio
 import hashlib
 import os
 import shutil
+from collections.abc import Awaitable, Callable
+from typing import Any, Optional
+
 import structlog
-from typing import Any, Awaitable, Callable, Dict, Optional
-
-from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.client.session import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
 
+from vigilus.config import get_settings
 from vigilus.core.command import parse_command_argv
 from vigilus.db.base import get_session_factory
-from vigilus.db.models import McpServer, McpServerStatus, Tool, ToolImplementationType, PermissionLevel
-from vigilus.config import get_settings
+from vigilus.db.models import (
+    McpServer,
+    McpServerStatus,
+    PermissionLevel,
+    Tool,
+    ToolImplementationType,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -34,8 +41,8 @@ async def _run_logged(
     *,
     timeout: float,
     argv: list[str],
-    cwd: Optional[str] = None,
-    env: Optional[dict[str, str]] = None,
+    cwd: str | None = None,
+    env: dict[str, str] | None = None,
 ) -> str:
     """Run a setup step, capturing combined stdout/stderr.
 
@@ -54,7 +61,7 @@ async def _run_logged(
 
     try:
         out_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         await proc.wait()
         raise RuntimeError(f"{description} timed out after {int(timeout)}s")
@@ -68,7 +75,16 @@ async def _run_logged(
 
 
 class McpConnection:
-    def __init__(self, server_id: str, command: str, args: list[str], env: dict[str, str], github_url: str = None, install_command: str = None, working_dir: str = None):
+    def __init__(
+        self,
+        server_id: str,
+        command: str,
+        args: list[str],
+        env: dict[str, str],
+        github_url: str = None,
+        install_command: str = None,
+        working_dir: str = None,
+    ):
         self.server_id = server_id
         self.command = command
         self.args = args
@@ -76,14 +92,14 @@ class McpConnection:
         self.github_url = github_url
         self.install_command = install_command
         self.working_dir = working_dir
-        self.session: Optional[ClientSession] = None
-        self._task: Optional[asyncio.Task] = None
+        self.session: ClientSession | None = None
+        self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
         self._ready = asyncio.Event()  # set once the session is initialized
         self._clean_stop = False  # True when stop() was invoked intentionally
         # Called from _run()'s finally block so the manager can reconcile DB
         # status and drop the in-memory connection on EVERY exit path.
-        self.on_exit: Optional[Callable[[str, bool, Optional[str]], Awaitable[None]]] = None
+        self.on_exit: Callable[[str, bool, str | None], Awaitable[None]] | None = None
 
     def _install_marker_path(self, repo_path: str) -> str:
         return os.path.join(repo_path, INSTALL_MARKER)
@@ -98,7 +114,7 @@ class McpConnection:
         except OSError:
             return False
 
-    async def _prepare_env(self) -> Optional[str]:
+    async def _prepare_env(self) -> str | None:
         if not self.github_url:
             return self.working_dir
 
@@ -151,10 +167,12 @@ class McpConnection:
 
     async def _run(self):
         crashed = False
-        error_msg: Optional[str] = None
+        error_msg: str | None = None
         try:
             cwd = await self._prepare_env()
-            params = StdioServerParameters(command=self.command, args=self.args, env=self.env, cwd=cwd)
+            params = StdioServerParameters(
+                command=self.command, args=self.args, env=self.env, cwd=cwd
+            )
             async with stdio_client(params) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
@@ -211,16 +229,21 @@ class McpConnection:
 
         async with get_session_factory()() as db:
             from sqlalchemy import select
-            from vigilus.db.models import Operator, OperatorTool
 
             created_tool_ids = []
 
             for mcp_tool in tools_res.tools:
-                query = select(Tool).where(Tool.mcp_server_id == self.server_id, Tool.mcp_tool_name == mcp_tool.name)
+                query = select(Tool).where(
+                    Tool.mcp_server_id == self.server_id, Tool.mcp_tool_name == mcp_tool.name
+                )
                 res = await db.execute(query)
                 existing = res.scalar_one_or_none()
 
-                input_schema = mcp_tool.inputSchema if hasattr(mcp_tool, "inputSchema") else getattr(mcp_tool, "input_schema", {})
+                input_schema = (
+                    mcp_tool.inputSchema
+                    if hasattr(mcp_tool, "inputSchema")
+                    else getattr(mcp_tool, "input_schema", {})
+                )
 
                 if existing:
                     existing.description = mcp_tool.description or ""
@@ -260,7 +283,7 @@ class McpConnection:
                 await self._task
             except asyncio.CancelledError:
                 pass  # external cancellation during shutdown is expected
-            
+
     async def call_tool(self, name: str, arguments: dict) -> Any:
         if not self.session:
             raise RuntimeError("MCP server not connected")
@@ -268,19 +291,19 @@ class McpConnection:
 
 
 class McpManager:
-    _instance: Optional['McpManager'] = None
-    
+    _instance: Optional["McpManager"] = None
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance.connections = {}
-            cls._instance._restart_locks: Dict[str, asyncio.Lock] = {}
+            cls._instance._restart_locks: dict[str, asyncio.Lock] = {}
         return cls._instance
 
     async def start_server(self, server: McpServer):
         if server.id in self.connections:
             await self.stop_server(server.id)
-            
+
         env = dict(server.env_vars) if server.env_vars else {}
         # Ensure PATH is inherited so things like node/npx can be found
         full_env = dict(os.environ)
@@ -300,15 +323,15 @@ class McpManager:
             full_env["HOME"] = fallback_home
 
         full_env.update(env)
-        
+
         conn = McpConnection(
-            server_id=server.id, 
-            command=server.command, 
-            args=server.args or [], 
+            server_id=server.id,
+            command=server.command,
+            args=server.args or [],
             env=full_env,
             github_url=server.github_url,
             install_command=server.install_command,
-            working_dir=server.working_dir
+            working_dir=server.working_dir,
         )
         self.connections[server.id] = conn
         conn.on_exit = self._on_connection_exit
@@ -338,7 +361,7 @@ class McpManager:
             shutil.rmtree(path, ignore_errors=True)
 
     async def _on_connection_exit(
-        self, server_id: str, crashed: bool, error_msg: Optional[str]
+        self, server_id: str, crashed: bool, error_msg: str | None
     ) -> None:
         """Reconcile state after a connection's task ends.
 
@@ -391,11 +414,11 @@ class McpManager:
         """Wait for a freshly started connection to finish initializing."""
         try:
             await asyncio.wait_for(conn._ready.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return False
         return conn.session is not None
 
-    async def get_connection(self, server_id: str) -> Optional[McpConnection]:
+    async def get_connection(self, server_id: str) -> McpConnection | None:
         return self.connections.get(server_id)
 
     async def call_tool(self, server_id: str, tool_name: str, arguments: dict) -> Any:

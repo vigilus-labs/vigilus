@@ -9,24 +9,23 @@ from __future__ import annotations
 
 import json
 import re
-import structlog
 from typing import Any
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from vigilus.providers.base import LLMMessage, ProviderError
-from vigilus.db.models import Operator, OperatorTool
 from vigilus.core.operator_runtime import OperatorRuntime
 from vigilus.core.tasks import TaskCancelled
+from vigilus.db.models import Operator, OperatorTool
+from vigilus.providers.base import LLMMessage, ProviderError
 
 logger = structlog.get_logger(__name__)
 
 # Pattern to detect delegation JSON in orchestrator responses.
 # Group 1: fenced ```json ... ``` block; Group 2: inline {...} block.
 _DELEGATE_RE = re.compile(
-    r'```json\s*(\{[^`]*"delegate"[^`]*\})\s*```'
-    r'|(\{"delegate"[^}]*\})',
+    r'```json\s*(\{[^`]*"delegate"[^`]*\})\s*```' r'|(\{"delegate"[^}]*\})',
     re.DOTALL,
 )
 
@@ -141,11 +140,17 @@ async def execute_delegation(
     target_op = result.scalar_one_or_none()
 
     if not target_op:
-        available = (await db.execute(
-            select(Operator.name).where(
-                Operator.enabled == True, Operator.delegatable == True  # noqa: E712
+        available = (
+            (
+                await db.execute(
+                    select(Operator.name).where(
+                        Operator.enabled == True, Operator.delegatable == True  # noqa: E712
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         return {
             "status": "error",
             "error": (
@@ -167,15 +172,19 @@ async def execute_delegation(
     if not target_op.provider:
         from vigilus.db.models import Provider
 
-        fallback_provider = (await db.execute(
-            select(Provider).where(
-                Provider.is_default == True, Provider.enabled == True  # noqa: E712
+        fallback_provider = (
+            await db.execute(
+                select(Provider).where(
+                    Provider.is_default == True, Provider.enabled == True  # noqa: E712
+                )
             )
-        )).scalar_one_or_none()
+        ).scalar_one_or_none()
         if not fallback_provider:
-            fallback_provider = (await db.execute(
-                select(Provider).where(Provider.enabled == True)  # noqa: E712
-            )).scalars().first()
+            fallback_provider = (
+                (await db.execute(select(Provider).where(Provider.enabled == True)))  # noqa: E712
+                .scalars()
+                .first()
+            )
         if not fallback_provider:
             return {
                 "status": "error",
@@ -207,8 +216,12 @@ async def execute_delegation(
         runtime = OperatorRuntime(target_op, fallback_provider=fallback_provider)
         messages = [LLMMessage(role="user", content=prompt)]
         final_msgs, tool_history = await runtime.run(
-            messages, session_id=session_id, max_iterations=10,
-            bridge=bridge, cancel_event=cancel_event, unattended=unattended,
+            messages,
+            session_id=session_id,
+            max_iterations=10,
+            bridge=bridge,
+            cancel_event=cancel_event,
+            unattended=unattended,
         )
 
         # Extract the final response text

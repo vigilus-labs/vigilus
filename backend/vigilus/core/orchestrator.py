@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import json
 import os
-import structlog
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+import structlog
 
 from vigilus.config import get_settings
 
@@ -92,7 +93,7 @@ def load_orchestrator_config() -> OrchestratorConfig:
     path = _config_path()
     if os.path.exists(path):
         try:
-            with open(path, "r") as f:
+            with open(path) as f:
                 _config_cache = OrchestratorConfig.from_dict(json.load(f))
             return _config_cache
         except Exception as e:
@@ -137,7 +138,9 @@ async def resolve_orchestrator_provider(db):
 
     if not provider_id:
         result = await db.execute(
-            select(Provider).where(Provider.is_default == True, Provider.enabled == True)  # noqa: E712
+            select(Provider).where(
+                Provider.is_default.is_(True), Provider.enabled.is_(True)
+            )  # noqa: E712
         )
         fallback = result.scalar_one_or_none()
         if not fallback:
@@ -153,9 +156,7 @@ async def resolve_orchestrator_provider(db):
             "Orchestrator provider not found. Please reconfigure it in Settings."
         )
     if not provider_row.enabled:
-        raise OrchestratorNotConfigured(
-            "Orchestrator provider is disabled. Please enable it."
-        )
+        raise OrchestratorNotConfigured("Orchestrator provider is disabled. Please enable it.")
 
     provider = build_provider(provider_row)
     model = orch_cfg.model or provider_row.default_model

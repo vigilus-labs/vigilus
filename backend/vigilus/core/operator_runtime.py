@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import structlog
 from typing import Any
 
+import structlog
+
+from vigilus.core.tasks import TaskCancelled, await_cancelled
 from vigilus.db.models import Operator
-from vigilus.providers.base import LLMMessage, ToolSpec, ToolUse
+from vigilus.providers.base import LLMMessage, ToolSpec
 from vigilus.providers.registry import build_provider
 from vigilus.tools.registry import ToolRegistry
-from vigilus.core.tasks import TaskCancelled, await_cancelled
 
 logger = structlog.get_logger(__name__)
 
@@ -39,11 +40,13 @@ class OperatorRuntime:
         tools = []
         for ot in self.operator.operator_tools:
             tool = ot.tool
-            tools.append(ToolSpec(
-                name=tool.name,
-                description=tool.description or "",
-                input_schema=tool.input_schema or {},
-            ))
+            tools.append(
+                ToolSpec(
+                    name=tool.name,
+                    description=tool.description or "",
+                    input_schema=tool.input_schema or {},
+                )
+            )
         return tools
 
     async def _build_system_prompt(self, tools: list[ToolSpec]) -> str | None:
@@ -70,8 +73,9 @@ class OperatorRuntime:
             if block:
                 parts.append(block)
         except Exception as e:
-            logger.warning("operator.memory_recall_failed",
-                           operator=self.operator.name, error=str(e))
+            logger.warning(
+                "operator.memory_recall_failed", operator=self.operator.name, error=str(e)
+            )
 
         if any(t.name == "memory_save" for t in tools):
             parts.append(
@@ -150,12 +154,14 @@ class OperatorRuntime:
                 # Build tool_calls list for LLMMessage
                 tool_call_dicts = []
                 for tu in response.tool_uses:
-                    tool_call_dicts.append({
-                        "type": "tool_use",
-                        "id": tu.id,
-                        "name": tu.name,
-                        "input": tu.arguments,
-                    })
+                    tool_call_dicts.append(
+                        {
+                            "type": "tool_use",
+                            "id": tu.id,
+                            "name": tu.name,
+                            "input": tu.arguments,
+                        }
+                    )
 
                 assistant_msg = LLMMessage(
                     role="assistant",
@@ -177,12 +183,14 @@ class OperatorRuntime:
                         logger.info("operator.cancelled_midtools", operator=self.operator.name)
                         # Synthesize a tool result so message history stays valid
                         # (every tool_use needs a matching tool result block).
-                        messages.append(LLMMessage(
-                            role="tool",
-                            name=tool_use.name,
-                            tool_use_id=tool_use.id,
-                            content="Cancelled by user before execution.",
-                        ))
+                        messages.append(
+                            LLMMessage(
+                                role="tool",
+                                name=tool_use.name,
+                                tool_use_id=tool_use.id,
+                                content="Cancelled by user before execution.",
+                            )
+                        )
                         continue
 
                     logger.info(
@@ -192,10 +200,13 @@ class OperatorRuntime:
                     )
 
                     if bridge:
-                        bridge.publish("tool_call", {
-                            "tool": tool_use.name,
-                            "operator": self.operator.name,
-                        })
+                        bridge.publish(
+                            "tool_call",
+                            {
+                                "tool": tool_use.name,
+                                "operator": self.operator.name,
+                            },
+                        )
 
                     result = await self.tool_registry.execute(
                         tool_id_or_name=tool_use.name,
@@ -217,19 +228,24 @@ class OperatorRuntime:
                     messages.append(tool_msg)
 
                     if bridge:
-                        bridge.publish("tool_result", {
-                            "tool": tool_use.name,
-                            "operator": self.operator.name,
-                            "success": result.success,
-                            "preview": tool_output[:300],
-                        })
+                        bridge.publish(
+                            "tool_result",
+                            {
+                                "tool": tool_use.name,
+                                "operator": self.operator.name,
+                                "success": result.success,
+                                "preview": tool_output[:300],
+                            },
+                        )
 
-                    tool_history.append({
-                        "tool": tool_use.name,
-                        "arguments": tool_use.arguments,
-                        "success": result.success,
-                        "output_preview": (result.output or result.error or "")[:200],
-                    })
+                    tool_history.append(
+                        {
+                            "tool": tool_use.name,
+                            "arguments": tool_use.arguments,
+                            "success": result.success,
+                            "output_preview": (result.output or result.error or "")[:200],
+                        }
+                    )
             else:
                 # Final assistant message – no tool calls
                 assistant_msg = LLMMessage(

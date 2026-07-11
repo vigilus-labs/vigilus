@@ -21,17 +21,20 @@ class ScriptedProvider:
         self.replies = list(replies)
         self.calls: list[list[LLMMessage]] = []
 
-    async def complete(self, messages, *, system=None, tools=None,
-                       temperature=0.0, **kwargs) -> LLMResponse:
+    async def complete(
+        self, messages, *, system=None, tools=None, temperature=0.0, **kwargs
+    ) -> LLMResponse:
         self.calls.append(list(messages))
         return LLMResponse(content=self.replies.pop(0))
 
 
 def _delegation_json() -> str:
-    return json.dumps({
-        "delegate": "Security Monitor",
-        "task": "Run an nmap scan of 10.0.0.0/24",
-    })
+    return json.dumps(
+        {
+            "delegate": "Security Monitor",
+            "task": "Run an nmap scan of 10.0.0.0/24",
+        }
+    )
 
 
 async def _fake_delegation(*args, **kwargs):
@@ -45,15 +48,19 @@ async def _fake_delegation(*args, **kwargs):
 
 async def test_empty_final_reply_is_retried(db_session, monkeypatch):
     monkeypatch.setattr("vigilus.api.chat.execute_delegation", _fake_delegation)
-    provider = ScriptedProvider([
-        _delegation_json(),          # 1: delegate
-        "",                          # 2: empty final reply → nudge + retry
-        "All done — 3 hosts up.",    # 3: recovered summary
-    ])
+    provider = ScriptedProvider(
+        [
+            _delegation_json(),  # 1: delegate
+            "",  # 2: empty final reply → nudge + retry
+            "All done — 3 hosts up.",  # 3: recovered summary
+        ]
+    )
 
     msgs = await _run_orchestrator(
         [LLMMessage(role="user", content="scan my network")],
-        provider, "system prompt", db=db_session,
+        provider,
+        "system prompt",
+        db=db_session,
     )
 
     final = msgs[-1]
@@ -70,7 +77,9 @@ async def test_empty_twice_falls_back_to_operator_report(db_session, monkeypatch
 
     msgs = await _run_orchestrator(
         [LLMMessage(role="user", content="scan my network")],
-        provider, "system prompt", db=db_session,
+        provider,
+        "system prompt",
+        db=db_session,
     )
 
     final = msgs[-1]
@@ -84,7 +93,9 @@ async def test_empty_without_delegation_gets_notice(db_session):
 
     msgs = await _run_orchestrator(
         [LLMMessage(role="user", content="hello")],
-        provider, "system prompt", db=db_session,
+        provider,
+        "system prompt",
+        db=db_session,
     )
 
     final = msgs[-1]
@@ -97,7 +108,9 @@ async def test_nonempty_reply_unaffected(db_session):
 
     msgs = await _run_orchestrator(
         [LLMMessage(role="user", content="hello")],
-        provider, "system prompt", db=db_session,
+        provider,
+        "system prompt",
+        db=db_session,
     )
 
     assert len(msgs) == 1

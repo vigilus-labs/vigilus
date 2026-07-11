@@ -24,22 +24,26 @@ def _extract_attachments(msg: dict) -> list[dict]:
     out: list[dict] = []
     doc = msg.get("document")
     if doc:
-        out.append({
-            "file_id": doc.get("file_id"),
-            "filename": doc.get("file_name"),
-            "mime_type": doc.get("mime_type"),
-            "size": doc.get("file_size"),
-        })
+        out.append(
+            {
+                "file_id": doc.get("file_id"),
+                "filename": doc.get("file_name"),
+                "mime_type": doc.get("mime_type"),
+                "size": doc.get("file_size"),
+            }
+        )
     # Photos come as size variants; keep the largest.
     photos = msg.get("photo") or []
     if photos:
         biggest = max(photos, key=lambda p: p.get("file_size", 0))
-        out.append({
-            "file_id": biggest.get("file_id"),
-            "filename": "photo.jpg",
-            "mime_type": "image/jpeg",
-            "size": biggest.get("file_size"),
-        })
+        out.append(
+            {
+                "file_id": biggest.get("file_id"),
+                "filename": "photo.jpg",
+                "mime_type": "image/jpeg",
+                "size": biggest.get("file_size"),
+            }
+        )
     return out
 
 
@@ -96,11 +100,14 @@ class TelegramAdapter(ChannelAdapter):
     async def _poll_loop(self) -> None:
         while self._running:
             try:
-                resp = await self._call("getUpdates", {
-                    "offset": self._offset,
-                    "timeout": 60,
-                    "allowed_updates": ["message", "callback_query"],
-                })
+                resp = await self._call(
+                    "getUpdates",
+                    {
+                        "offset": self._offset,
+                        "timeout": 60,
+                        "allowed_updates": ["message", "callback_query"],
+                    },
+                )
                 for upd in resp.get("result", []):
                     self._offset = upd["update_id"] + 1
                     msg = upd.get("message")
@@ -132,15 +139,22 @@ class TelegramAdapter(ChannelAdapter):
     async def send_jit_prompt(self, chat_id: str, text: str, request_id: str) -> None:
         """Send a JIT prompt with inline Approve/Deny buttons."""
         keyboard = {
-            "inline_keyboard": [[
-                {"text": "✅ Approve", "callback_data": f"jit:approve:{request_id}"},
-                {"text": "⛔ Deny", "callback_data": f"jit:deny:{request_id}"},
-            ]]
+            "inline_keyboard": [
+                [
+                    {"text": "✅ Approve", "callback_data": f"jit:approve:{request_id}"},
+                    {"text": "⛔ Deny", "callback_data": f"jit:deny:{request_id}"},
+                ]
+            ]
         }
         try:
-            await self._call("sendMessage", {
-                "chat_id": chat_id, "text": text, "reply_markup": keyboard,
-            })
+            await self._call(
+                "sendMessage",
+                {
+                    "chat_id": chat_id,
+                    "text": text,
+                    "reply_markup": keyboard,
+                },
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning("telegram.jit_prompt_failed", error=str(e))
             await self.send(chat_id, text)
@@ -172,10 +186,14 @@ class TelegramAdapter(ChannelAdapter):
             message_id = message.get("message_id")
             if chat_id and message_id:
                 try:
-                    await self._call("editMessageText", {
-                        "chat_id": chat_id, "message_id": message_id,
-                        "text": verdict,
-                    })
+                    await self._call(
+                        "editMessageText",
+                        {
+                            "chat_id": chat_id,
+                            "message_id": message_id,
+                            "text": verdict,
+                        },
+                    )
                 except Exception:  # noqa: BLE001
                     pass
 
@@ -237,9 +255,14 @@ class TelegramAdapter(ChannelAdapter):
         if not handle:
             return
         try:
-            await self._call("editMessageText", {
-                "chat_id": chat_id, "message_id": int(handle), "text": text,
-            })
+            await self._call(
+                "editMessageText",
+                {
+                    "chat_id": chat_id,
+                    "message_id": int(handle),
+                    "text": text,
+                },
+            )
         except Exception:  # noqa: BLE001
             pass
 
@@ -257,7 +280,9 @@ class TelegramAdapter(ChannelAdapter):
 
     async def _call(self, method: str, params: dict | None = None) -> dict:
         assert self._client is not None
-        r = await self._client.post(_URL.format(token=self._token, method=method), json=params or {})
+        r = await self._client.post(
+            _URL.format(token=self._token, method=method), json=params or {}
+        )
         try:
             r.raise_for_status()
         except httpx.HTTPStatusError as e:

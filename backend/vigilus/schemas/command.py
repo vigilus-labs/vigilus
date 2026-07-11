@@ -18,9 +18,9 @@ class CommandArg(BaseModel):
 
 
 class CommandSpec(BaseModel):
-    name: str                  # "model" → typed as /model
-    summary: str               # one-line description, shown in autocomplete
-    usage: str                 # e.g. "/model [model-name]"
+    name: str  # "model" → typed as /model
+    summary: str  # one-line description, shown in autocomplete
+    usage: str  # e.g. "/model [model-name]"
     args: list[CommandArg] = []
     # "server" commands run via POST /api/commands/run; "client" commands are
     # declared here for unified autocomplete but handled inside each client
@@ -45,5 +45,5 @@ class CommandResult(BaseModel):
         "config_changed",
         "stopped",
     ]
-    text: str = ""             # markdown rendered as an ephemeral system notice
+    text: str = ""  # markdown rendered as an ephemeral system notice
     data: dict[str, Any] | None = None

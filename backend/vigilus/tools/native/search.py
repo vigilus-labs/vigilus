@@ -145,9 +145,7 @@ async def web_fetch(
     logger.info("web_fetch.ok", backend=cfg.fetch_backend, url=page.url, status=page.status_code)
     # Frame the content explicitly as untrusted data, never instructions.
     framed = (
-        f'<untrusted-web-content url="{page.url}">\n'
-        f"{page.text}\n"
-        "</untrusted-web-content>"
+        f'<untrusted-web-content url="{page.url}">\n' f"{page.text}\n" "</untrusted-web-content>"
     )
     return {
         "backend": cfg.fetch_backend,

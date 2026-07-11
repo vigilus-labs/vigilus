@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 import anthropic
 from anthropic.types import MessageParam, ToolParam
@@ -42,7 +42,7 @@ class AnthropicProvider(AgentLLM):
                         converted.append({"role": "assistant", "content": raw_content})
                     else:
                         converted.append({"role": "assistant", "content": msg.content or ""})
-                elif hasattr(msg, 'tool_calls') and msg.tool_calls:
+                elif hasattr(msg, "tool_calls") and msg.tool_calls:
                     # Build content blocks from tool_calls
                     blocks = []
                     if msg.content:
@@ -51,12 +51,14 @@ class AnthropicProvider(AgentLLM):
                         if isinstance(tc, dict):
                             tu_type = tc.get("type", "tool_use")
                             if tu_type == "tool_use":
-                                blocks.append({
-                                    "type": "tool_use",
-                                    "id": tc["id"],
-                                    "name": tc["name"],
-                                    "input": tc.get("input", tc.get("arguments", {})),
-                                })
+                                blocks.append(
+                                    {
+                                        "type": "tool_use",
+                                        "id": tc["id"],
+                                        "name": tc["name"],
+                                        "input": tc.get("input", tc.get("arguments", {})),
+                                    }
+                                )
                     if blocks:
                         converted.append({"role": "assistant", "content": blocks})
                     else:
@@ -70,10 +72,12 @@ class AnthropicProvider(AgentLLM):
                     # a tool_result with a bogus id would be rejected, so send
                     # it as a plain user message instead.
                     label = msg.name or "tool"
-                    converted.append({
-                        "role": "user",
-                        "content": f"[Result from {label}]\n{msg.content}",
-                    })
+                    converted.append(
+                        {
+                            "role": "user",
+                            "content": f"[Result from {label}]\n{msg.content}",
+                        }
+                    )
                     continue
 
                 tool_result_content = msg.content
@@ -83,16 +87,18 @@ class AnthropicProvider(AgentLLM):
                 else:
                     tool_result_content = str(tool_result_content)
 
-                converted.append({
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": msg.tool_use_id,
-                            "content": tool_result_content,
-                        }
-                    ],
-                })
+                converted.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": msg.tool_use_id,
+                                "content": tool_result_content,
+                            }
+                        ],
+                    }
+                )
 
         return converted
 
@@ -103,11 +109,13 @@ class AnthropicProvider(AgentLLM):
 
         converted = []
         for tool in tools:
-            converted.append({
-                "name": tool.name,
-                "description": tool.description,
-                "input_schema": tool.input_schema,
-            })
+            converted.append(
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.input_schema,
+                }
+            )
         return converted
 
     async def complete(
@@ -153,11 +161,13 @@ class AnthropicProvider(AgentLLM):
             if block.type == "text":
                 content += block.text
             elif block.type == "tool_use":
-                tool_uses.append(ToolUse(
-                    id=block.id,
-                    name=block.name,
-                    arguments=block.input,
-                ))
+                tool_uses.append(
+                    ToolUse(
+                        id=block.id,
+                        name=block.name,
+                        arguments=block.input,
+                    )
+                )
 
         return LLMResponse(
             content=content,

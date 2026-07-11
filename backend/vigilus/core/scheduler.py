@@ -96,11 +96,14 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
         await db.commit()
 
         logger.info("scheduler.task_start", name=task.name, task_id=task.id)
-        await event_bus.publish("action.created", {
-            "event_type": "action.created",
-            "action": "scheduled_task_start",
-            "task": task.name,
-        })
+        await event_bus.publish(
+            "action.created",
+            {
+                "event_type": "action.created",
+                "action": "scheduled_task_start",
+                "task": task.name,
+            },
+        )
 
         # Wire the run to the same live-activity plumbing the chat page uses, so
         # a scheduled run can be watched and reviewed on /chat (under the Tasks
@@ -123,8 +126,13 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
         from vigilus.core.tasks import get_task_registry
 
         activity_events = {
-            EVT_THINKING, EVT_DELEGATION_START, EVT_TOOL_CALL, EVT_TOOL_RESULT,
-            EVT_DELEGATION_RESULT, EVT_TEXT_DELTA, EVT_ERROR,
+            EVT_THINKING,
+            EVT_DELEGATION_START,
+            EVT_TOOL_CALL,
+            EVT_TOOL_RESULT,
+            EVT_DELEGATION_RESULT,
+            EVT_TEXT_DELTA,
+            EVT_ERROR,
         }
 
         result: dict
@@ -181,8 +189,12 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
             from vigilus.core.turn import run_turn
 
             final_text = await run_turn(
-                db, chat_session, framed, auto_title=False,
-                bridge=bridge, cancel_event=running_task.cancel_event,
+                db,
+                chat_session,
+                framed,
+                auto_title=False,
+                bridge=bridge,
+                cancel_event=running_task.cancel_event,
                 unattended=True,
             )
 
@@ -220,14 +232,19 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
 
             # Optional channel delivery: push the summary to a Telegram/Discord chat.
             if result["status"] == "success" and task.deliver_to:
-                await _deliver_to_channel(task.deliver_to, result.get("summary", ""), name=task.name)
+                await _deliver_to_channel(
+                    task.deliver_to, result.get("summary", ""), name=task.name
+                )
 
-        await event_bus.publish("action.completed", {
-            "event_type": "action.completed",
-            "action": "scheduled_task_complete",
-            "task": task.name if task else task_id,
-            "status": result["status"],
-        })
+        await event_bus.publish(
+            "action.completed",
+            {
+                "event_type": "action.completed",
+                "action": "scheduled_task_complete",
+                "task": task.name if task else task_id,
+                "status": result["status"],
+            },
+        )
 
         logger.info(
             "scheduler.task_done",
@@ -263,9 +280,15 @@ class SchedulerEngine:
         tz = get_app_timezone()
         factory = get_session_factory()
         async with factory() as db:
-            tasks = (await db.execute(
-                select(ScheduledTask).where(ScheduledTask.enabled == True)  # noqa: E712
-            )).scalars().all()
+            tasks = (
+                (
+                    await db.execute(
+                        select(ScheduledTask).where(ScheduledTask.enabled == True)  # noqa: E712
+                    )
+                )
+                .scalars()
+                .all()
+            )
             for task in tasks:
                 self._register(task)
                 task.next_run_at = next_fire_time(task.cron_expression, tz)

@@ -6,9 +6,7 @@ import pytest
 
 
 async def _create_user(client, username="tui-user", password="a-strong-password"):
-    resp = await client.post(
-        "/api/auth/setup", json={"username": username, "password": password}
-    )
+    resp = await client.post("/api/auth/setup", json={"username": username, "password": password})
     assert resp.status_code == 200, resp.text
     return username, password
 
@@ -80,9 +78,7 @@ async def test_stale_token_version_rejected(unauthenticated_client, db_session):
     )
     token = resp.json()["token"]
 
-    user = (await db_session.execute(
-        select(User).where(User.username == username)
-    )).scalar_one()
+    user = (await db_session.execute(select(User).where(User.username == username))).scalar_one()
     user.token_version += 1
     await db_session.commit()
 

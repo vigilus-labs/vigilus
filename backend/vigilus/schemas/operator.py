@@ -88,7 +88,7 @@ class OperatorResponse(BaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_model(cls, operator) -> "OperatorResponse":
+    def from_model(cls, operator) -> OperatorResponse:
         """Build response from an ORM Operator, including tool IDs."""
         tool_ids = [ot.tool_id for ot in (operator.operator_tools or [])]
         return cls(

@@ -32,6 +32,7 @@ async def scope_ingest(arguments: dict[str, Any], operator: Any = None, **kwargs
     if not raw and host_list:
         # Pre-parsed hosts: synthesise a minimal JSON the core parser accepts.
         import json
+
         raw = json.dumps({"hosts": host_list})
 
     if not raw:

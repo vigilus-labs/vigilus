@@ -49,9 +49,7 @@ async def test_approve_single_use(db_session: AsyncSession, async_client: AsyncC
     )
     assert token is None  # strict → pending
 
-    res = await async_client.post(
-        f"/api/jit/{req.id}/approve", json={"single_use": True}
-    )
+    res = await async_client.post(f"/api/jit/{req.id}/approve", json={"single_use": True})
     assert res.status_code == 200
     body = res.json()
     assert body["status"] == "approved"
@@ -67,9 +65,7 @@ async def test_approve_custom_ttl_clamped(db_session: AsyncSession, async_client
     # Ask for an absurd TTL → clamped to jit_max_ttl_minutes.
     from vigilus.config import get_settings
 
-    res = await async_client.post(
-        f"/api/jit/{req.id}/approve", json={"ttl_minutes": 99999}
-    )
+    res = await async_client.post(f"/api/jit/{req.id}/approve", json={"ttl_minutes": 99999})
     assert res.status_code == 200
     body = res.json()
     assert body["scope_mode"] == "timed"
@@ -82,9 +78,7 @@ async def test_approve_broaden_resource(db_session: AsyncSession, async_client: 
     req, _ = await WardenService().request_jit(
         db_session, op, "server:web01", Permission.exec, "patch"
     )
-    res = await async_client.post(
-        f"/api/jit/{req.id}/approve", json={"resource": "*"}
-    )
+    res = await async_client.post(f"/api/jit/{req.id}/approve", json={"resource": "*"})
     assert res.status_code == 200
     assert res.json()["resource"] == "*"
 
