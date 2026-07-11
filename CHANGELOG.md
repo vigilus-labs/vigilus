@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Configured commands are no longer passed through a shell, preventing shell
   interpretation of their contents
+- Discord slash commands no longer crash with a `NameError` when invoked
+  (missing `handle_inbound` import)
 
 ## [0.2.1] - 2026-07-10
 
