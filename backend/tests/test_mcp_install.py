@@ -189,9 +189,7 @@ async def test_reinstall_requires_github_server(
 async def test_reinstall_wipes_repo_and_restarts(
     data_dir, manager, db_session: AsyncSession, async_client: AsyncClient, monkeypatch
 ):
-    srv = McpServer(
-        id="gh1", name="gh", command="node", github_url="https://github.com/o/r.git"
-    )
+    srv = McpServer(id="gh1", name="gh", command="node", github_url="https://github.com/o/r.git")
     db_session.add(srv)
     await db_session.commit()
     repo = _seed_repo(data_dir, "gh1")
@@ -209,9 +207,7 @@ async def test_reinstall_wipes_repo_and_restarts(
 async def test_delete_removes_cloned_repo(
     data_dir, manager, db_session: AsyncSession, async_client: AsyncClient
 ):
-    srv = McpServer(
-        id="gh2", name="gh2", command="node", github_url="https://github.com/o/r.git"
-    )
+    srv = McpServer(id="gh2", name="gh2", command="node", github_url="https://github.com/o/r.git")
     db_session.add(srv)
     await db_session.commit()
     repo = _seed_repo(data_dir, "gh2")

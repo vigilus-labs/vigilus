@@ -10,6 +10,7 @@ from vigilus.schemas.tool import ToolCreate, ToolResponse, ToolUpdate
 
 router = APIRouter(prefix="/tools", tags=["Tools"])
 
+
 def _to_response(tool: Tool) -> ToolResponse:
     return ToolResponse(
         id=tool.id,
@@ -27,10 +28,12 @@ def _to_response(tool: Tool) -> ToolResponse:
         created_at=tool.created_at,
     )
 
+
 @router.get("", response_model=list[ToolResponse])
 async def list_tools(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Tool).order_by(Tool.name))
     return [_to_response(t) for t in result.scalars().all()]
+
 
 @router.get("/{tool_id}", response_model=ToolResponse)
 async def get_tool(tool_id: str, db: AsyncSession = Depends(get_db)):

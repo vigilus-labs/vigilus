@@ -1,33 +1,32 @@
 import pytest
-from unittest.mock import patch, MagicMock
-from vigilus.core.rbac import PolicyEngine, Permission, JITToken, WardenService
+
+from vigilus.core.rbac import Permission, PolicyEngine, WardenService
+from vigilus.db.models import Operator, PermissionLevel, Tool
 from vigilus.tools.registry import ToolRegistry
-from vigilus.db.models import Operator, PermissionLevel, Tool, ToolImplementationType
-from sqlalchemy.ext.asyncio import AsyncSession
-from vigilus.config import get_settings
+
 
 @pytest.fixture
 def policy_engine():
     return PolicyEngine()
 
+
 @pytest.fixture
 def warden():
     return WardenService()
 
+
 def test_warden_service(warden):
     token = warden.issue_token(
-        operator_id="op123",
-        resource="/etc/nginx",
-        permission=Permission.write,
-        ttl_minutes=15
+        operator_id="op123", resource="/etc/nginx", permission=Permission.write, ttl_minutes=15
     )
     assert token is not None
-    
+
     jit = warden.validate_token(token)
     assert jit is not None
     assert jit.operator_id == "op123"
     assert jit.resource == "/etc/nginx"
     assert jit.permission == Permission.write
+
 
 @pytest.mark.asyncio
 async def test_policy_engine_allow_high_base_permission(policy_engine):
@@ -36,9 +35,10 @@ async def test_policy_engine_allow_high_base_permission(policy_engine):
         operator=op,
         required_permission=Permission.write,
         resource_path="/etc/shadow",
-        tool_name="test_tool"
+        tool_name="test_tool",
     )
     assert allowed is True
+
 
 @pytest.mark.asyncio
 async def test_policy_engine_deny_low_base_permission(policy_engine):
@@ -47,9 +47,10 @@ async def test_policy_engine_deny_low_base_permission(policy_engine):
         operator=op,
         required_permission=Permission.write,
         resource_path="/etc/shadow",
-        tool_name="test_tool"
+        tool_name="test_tool",
     )
     assert allowed is False
+
 
 @pytest.mark.asyncio
 async def test_policy_engine_allow_with_jit(policy_engine, warden):
@@ -62,9 +63,10 @@ async def test_policy_engine_allow_with_jit(policy_engine, warden):
         required_permission=Permission.write,
         resource_path="/etc/nginx/nginx.conf",
         jit_token=token,
-        tool_name="test_tool"
+        tool_name="test_tool",
     )
     assert allowed is True
+
 
 @pytest.mark.asyncio
 async def test_policy_engine_deny_outside_working_dir(policy_engine):
@@ -73,9 +75,10 @@ async def test_policy_engine_deny_outside_working_dir(policy_engine):
         operator=op,
         required_permission=Permission.write,
         resource_path="/etc/shadow",
-        tool_name="test_tool"
+        tool_name="test_tool",
     )
     assert allowed is False
+
 
 @pytest.mark.asyncio
 async def test_policy_engine_allow_inside_working_dir(policy_engine):
@@ -84,9 +87,10 @@ async def test_policy_engine_allow_inside_working_dir(policy_engine):
         operator=op,
         required_permission=Permission.write,
         resource_path="/app/config.json",
-        tool_name="test_tool"
+        tool_name="test_tool",
     )
     assert allowed is True
+
 
 @pytest.mark.asyncio
 async def test_tool_registry_resolve_missing():
@@ -96,6 +100,7 @@ async def test_tool_registry_resolve_missing():
     assert res.success is False
     assert "not found" in res.error
 
+
 @pytest.mark.asyncio
 async def test_tool_registry_policy_deny(db_session):
     registry = ToolRegistry()
@@ -104,7 +109,7 @@ async def test_tool_registry_policy_deny(db_session):
     db_session.add(op)
     db_session.add(tool)
     await db_session.commit()
-    
+
     # jit_wait_seconds=0: don't block waiting for an approval in tests
     res = await registry.execute("dangerous_tool", {}, operator=op, jit_wait_seconds=0)
     assert res.success is False

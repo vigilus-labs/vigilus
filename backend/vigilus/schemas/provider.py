@@ -61,7 +61,7 @@ class ProviderResponse(BaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_model(cls, provider) -> "ProviderResponse":
+    def from_model(cls, provider) -> ProviderResponse:
         """Build response from an ORM Provider, masking the api_key."""
         return cls(
             id=provider.id,

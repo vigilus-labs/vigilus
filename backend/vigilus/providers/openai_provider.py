@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 import openai
 
@@ -41,7 +42,7 @@ class OpenAIProvider(AgentLLM):
                         raw["role"] = "assistant"
                     # If there's content but it's empty and we have tool_calls, still include content
                     converted.append(raw)
-                elif hasattr(msg, 'tool_calls') and msg.tool_calls:
+                elif hasattr(msg, "tool_calls") and msg.tool_calls:
                     # Build tool_calls in OpenAI format from stored data
                     assistant_msg: dict[str, Any] = {
                         "role": "assistant",
@@ -51,43 +52,54 @@ class OpenAIProvider(AgentLLM):
                     for tc in msg.tool_calls:
                         if isinstance(tc, dict):
                             func_name = tc.get("name", tc.get("function", {}).get("name", ""))
-                            func_args = tc.get("input", tc.get("arguments", tc.get("function", {}).get("arguments", {})))
+                            func_args = tc.get(
+                                "input",
+                                tc.get("arguments", tc.get("function", {}).get("arguments", {})),
+                            )
                             tc_id = tc.get("id", f"call_{hash(func_name)}")
 
                             if isinstance(func_args, dict):
                                 func_args = json.dumps(func_args)
 
-                            assistant_msg["tool_calls"].append({
-                                "id": tc_id,
-                                "type": "function",
-                                "function": {
-                                    "name": func_name,
-                                    "arguments": func_args,
-                                },
-                            })
+                            assistant_msg["tool_calls"].append(
+                                {
+                                    "id": tc_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": func_name,
+                                        "arguments": func_args,
+                                    },
+                                }
+                            )
                     converted.append(assistant_msg)
                 else:
-                    converted.append({
-                        "role": "assistant",
-                        "content": str(msg.content) if msg.content else "",
-                    })
+                    converted.append(
+                        {
+                            "role": "assistant",
+                            "content": str(msg.content) if msg.content else "",
+                        }
+                    )
 
             elif msg.role == "tool":
                 if msg.tool_use_id:
-                    converted.append({
-                        "role": "tool",
-                        "tool_call_id": msg.tool_use_id,
-                        "content": str(msg.content),
-                    })
+                    converted.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": msg.tool_use_id,
+                            "content": str(msg.content),
+                        }
+                    )
                 else:
                     # No originating tool_call (e.g. delegation result) —
                     # strict providers reject orphan tool messages, so send
                     # it as a plain user message instead.
                     label = msg.name or "tool"
-                    converted.append({
-                        "role": "user",
-                        "content": f"[Result from {label}]\n{msg.content}",
-                    })
+                    converted.append(
+                        {
+                            "role": "user",
+                            "content": f"[Result from {label}]\n{msg.content}",
+                        }
+                    )
 
         return converted
 
@@ -97,14 +109,16 @@ class OpenAIProvider(AgentLLM):
 
         converted = []
         for tool in tools:
-            converted.append({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.input_schema,
-                },
-            })
+            converted.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.input_schema,
+                    },
+                }
+            )
         return converted
 
     async def complete(
@@ -172,11 +186,13 @@ class OpenAIProvider(AgentLLM):
                         arguments = json.loads(call.function.arguments)
                     except (json.JSONDecodeError, TypeError):
                         arguments = {}
-                    tool_uses.append(ToolUse(
-                        id=call.id,
-                        name=call.function.name,
-                        arguments=arguments,
-                    ))
+                    tool_uses.append(
+                        ToolUse(
+                            id=call.id,
+                            name=call.function.name,
+                            arguments=arguments,
+                        )
+                    )
 
         return LLMResponse(
             content=content,

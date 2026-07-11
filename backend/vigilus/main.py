@@ -141,6 +141,7 @@ async def lifespan(app: FastAPI):
     # Catches direct `uvicorn` usage where the operator won't see `vigilus doctor`.
     try:
         from vigilus.core.preflight import check_nmap_access
+
         nmap = check_nmap_access()
         if nmap.installed and not nmap.privileged_ok:
             logger.warning("startup.nmap_no_privileged", detail=nmap.detail)
@@ -237,30 +238,30 @@ def create_app() -> FastAPI:
     # ── API routers ─────────────────────────────────────────
     from fastapi import Depends
 
-    from vigilus.api.auth import router as auth_router
-    from vigilus.api.deps import require_user
-    from vigilus.api.system import router as system_router
-    from vigilus.api.providers import router as providers_router
-    from vigilus.api.tools import router as tools_router
     from vigilus.api.actions import router as actions_router
-    from vigilus.api.operators import router as operators_router
+    from vigilus.api.auth import router as auth_router
+    from vigilus.api.channels import router as channels_router
     from vigilus.api.chat import router as chat_router
+    from vigilus.api.commands import router as commands_router
+    from vigilus.api.credentials import router as credentials_router
+    from vigilus.api.deps import require_user
     from vigilus.api.jit import router as jit_router
     from vigilus.api.mcp import router as mcp_router
-    from vigilus.api.servers import router as servers_router
-    from vigilus.api.credentials import router as credentials_router
-    from vigilus.api.orchestrator import router as orchestrator_router
-    from vigilus.api.schedules import router as schedules_router
     from vigilus.api.memories import router as memories_router
+    from vigilus.api.operators import router as operators_router
+    from vigilus.api.orchestrator import router as orchestrator_router
+    from vigilus.api.providers import router as providers_router
     from vigilus.api.running_tasks import router as running_tasks_router
-    from vigilus.api.commands import router as commands_router
-    from vigilus.api.channels import router as channels_router
+    from vigilus.api.schedules import router as schedules_router
     from vigilus.api.scope import router as scope_router
     from vigilus.api.search import router as search_router
+    from vigilus.api.servers import router as servers_router
+    from vigilus.api.system import router as system_router
+    from vigilus.api.tools import router as tools_router
 
     auth_dep = [Depends(require_user)]
 
-    app.include_router(auth_router, prefix="/api")                           # public + self-authed
+    app.include_router(auth_router, prefix="/api")  # public + self-authed
     app.include_router(system_router, prefix="/api", dependencies=auth_dep)
     app.include_router(providers_router, prefix="/api", dependencies=auth_dep)
     app.include_router(tools_router, prefix="/api", dependencies=auth_dep)
@@ -287,5 +288,6 @@ def create_app() -> FastAPI:
         app.mount("/", SpaStaticFiles(directory=frontend_dir, html=True), name="frontend")
 
     return app
+
 
 app = create_app()

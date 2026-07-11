@@ -11,23 +11,23 @@ class OpenAICompatProvider(OpenAIProvider):
     """Adapter for OpenAI-compatible endpoints."""
 
     def __init__(
-        self, 
-        base_url: str, 
-        api_key: str | None = None, 
+        self,
+        base_url: str,
+        api_key: str | None = None,
         default_model: str = "gpt-3.5-turbo",
-        extra_headers: dict | None = None
+        extra_headers: dict | None = None,
     ):
         self.api_key = api_key or "sk-no-key-required"
         self.default_model = default_model
         self.base_url = base_url.rstrip("/")
-        
+
         # We need to initialize the underlying OpenAIProvider client with custom base_url
         import openai
-        
+
         default_headers = {}
         if extra_headers:
             default_headers.update(extra_headers)
-            
+
         self.client = openai.AsyncOpenAI(
             api_key=self.api_key,
             base_url=self.base_url,

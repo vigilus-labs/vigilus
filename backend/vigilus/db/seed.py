@@ -74,9 +74,7 @@ async def _reconcile_operator_names(db: AsyncSession) -> None:
             await db.execute(select(Operator).where(Operator.name == target_name))
         ).scalar_one_or_none()
         sources = [
-            (
-                await db.execute(select(Operator).where(Operator.name == s))
-            ).scalar_one_or_none()
+            (await db.execute(select(Operator).where(Operator.name == s))).scalar_one_or_none()
             for s in source_names
         ]
         sources = [s for s in sources if s is not None]
@@ -108,8 +106,12 @@ async def _absorb(db: AsyncSession, survivor: Operator, surplus: Operator) -> No
         Action,
         ChannelConfig,
         JitRequest,
-        Operator as OperatorModel,
         Scan,
+    )
+    from vigilus.db.models import (
+        Operator as OperatorModel,
+    )
+    from vigilus.db.models import (
         Session as SessionModel,
     )
 
@@ -117,16 +119,16 @@ async def _absorb(db: AsyncSession, survivor: Operator, surplus: Operator) -> No
     existing_tool_ids = {
         row.tool_id
         for row in (
-            await db.execute(
-                select(OperatorTool).where(OperatorTool.operator_id == survivor.id)
-            )
-        ).scalars().all()
+            await db.execute(select(OperatorTool).where(OperatorTool.operator_id == survivor.id))
+        )
+        .scalars()
+        .all()
     }
     moved = (
-        await db.execute(
-            select(OperatorTool).where(OperatorTool.operator_id == surplus.id)
-        )
-    ).scalars().all()
+        (await db.execute(select(OperatorTool).where(OperatorTool.operator_id == surplus.id)))
+        .scalars()
+        .all()
+    )
     for row in moved:
         if row.tool_id not in existing_tool_ids:
             db.add(OperatorTool(operator_id=survivor.id, tool_id=row.tool_id))
@@ -140,9 +142,7 @@ async def _absorb(db: AsyncSession, survivor: Operator, surplus: Operator) -> No
         (Scan, Scan.operator_id),
         (ChannelConfig, ChannelConfig.default_operator_id),
     ):
-        await db.execute(
-            update(model).where(col == surplus.id).values(**{col.key: survivor.id})
-        )
+        await db.execute(update(model).where(col == surplus.id).values(**{col.key: survivor.id}))
 
     # 3. Now safe to delete — no FKs reference surplus anymore.
     await db.execute(delete(OperatorModel).where(OperatorModel.id == surplus.id))
@@ -165,8 +165,15 @@ BUILTIN_TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "server_id": {"type": "string", "description": "Target server: name, hostname, or ID from the inventory"},
-                "all": {"type": "boolean", "default": False, "description": "Include stopped containers"},
+                "server_id": {
+                    "type": "string",
+                    "description": "Target server: name, hostname, or ID from the inventory",
+                },
+                "all": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Include stopped containers",
+                },
             },
             "required": ["server_id"],
         },
@@ -179,10 +186,20 @@ BUILTIN_TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "server_id": {"type": "string", "description": "Target server: name, hostname, or ID from the inventory"},
+                "server_id": {
+                    "type": "string",
+                    "description": "Target server: name, hostname, or ID from the inventory",
+                },
                 "container": {"type": "string", "description": "Container name or ID"},
-                "tail": {"type": "integer", "default": 100, "description": "Number of lines to tail"},
-                "since": {"type": "string", "description": "Show logs since timestamp (e.g. 2024-01-01T00:00:00)"},
+                "tail": {
+                    "type": "integer",
+                    "default": 100,
+                    "description": "Number of lines to tail",
+                },
+                "since": {
+                    "type": "string",
+                    "description": "Show logs since timestamp (e.g. 2024-01-01T00:00:00)",
+                },
             },
             "required": ["server_id", "container"],
         },
@@ -195,7 +212,10 @@ BUILTIN_TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "server_id": {"type": "string", "description": "Target server: name, hostname, or ID from the inventory"},
+                "server_id": {
+                    "type": "string",
+                    "description": "Target server: name, hostname, or ID from the inventory",
+                },
                 "container": {"type": "string", "description": "Container name or ID"},
             },
             "required": ["server_id", "container"],
@@ -210,7 +230,11 @@ BUILTIN_TOOLS: list[dict] = [
             "type": "object",
             "properties": {
                 "agent_id": {"type": "string", "description": "Wazuh agent ID (optional)"},
-                "level_min": {"type": "integer", "default": 7, "description": "Minimum alert level"},
+                "level_min": {
+                    "type": "integer",
+                    "default": 7,
+                    "description": "Minimum alert level",
+                },
                 "limit": {"type": "integer", "default": 25, "description": "Max alerts to return"},
                 "since": {"type": "string", "description": "ISO timestamp to filter from"},
             },
@@ -225,7 +249,11 @@ BUILTIN_TOOLS: list[dict] = [
             "type": "object",
             "properties": {
                 "agent_id": {"type": "string", "description": "Wazuh agent ID"},
-                "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"], "description": "Filter by severity"},
+                "severity": {
+                    "type": "string",
+                    "enum": ["critical", "high", "medium", "low"],
+                    "description": "Filter by severity",
+                },
                 "limit": {"type": "integer", "default": 25, "description": "Max results to return"},
             },
         },
@@ -238,7 +266,11 @@ BUILTIN_TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "status": {"type": "string", "enum": ["active", "disconnected", "never_connected"], "description": "Filter by agent status"},
+                "status": {
+                    "type": "string",
+                    "enum": ["active", "disconnected", "never_connected"],
+                    "description": "Filter by agent status",
+                },
                 "limit": {"type": "integer", "default": 50, "description": "Max agents to return"},
             },
         },
@@ -375,9 +407,20 @@ BUILTIN_TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "content": {"type": "string", "description": "The fact to remember — one or two concise sentences"},
-                "scope": {"type": "string", "enum": ["global", "self"], "default": "global", "description": "'global' = shared environment knowledge, 'self' = private to this operator"},
-                "category": {"type": "string", "description": "Optional label, e.g. 'server', 'service', 'preference'"},
+                "content": {
+                    "type": "string",
+                    "description": "The fact to remember — one or two concise sentences",
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": ["global", "self"],
+                    "default": "global",
+                    "description": "'global' = shared environment knowledge, 'self' = private to this operator",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Optional label, e.g. 'server', 'service', 'preference'",
+                },
             },
             "required": ["content"],
         },
@@ -391,7 +434,10 @@ BUILTIN_TOOLS: list[dict] = [
             "type": "object",
             "properties": {
                 "memory_id": {"type": "string", "description": "ID of the memory to delete"},
-                "content": {"type": "string", "description": "Exact content of the memory to delete (alternative to memory_id)"},
+                "content": {
+                    "type": "string",
+                    "description": "Exact content of the memory to delete (alternative to memory_id)",
+                },
             },
         },
     },
@@ -404,7 +450,11 @@ BUILTIN_TOOLS: list[dict] = [
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "Absolute file path to read"},
-                "max_lines": {"type": "integer", "default": 500, "description": "Max lines to return"},
+                "max_lines": {
+                    "type": "integer",
+                    "default": 500,
+                    "description": "Max lines to return",
+                },
             },
             "required": ["path"],
         },
@@ -418,7 +468,11 @@ BUILTIN_TOOLS: list[dict] = [
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "Absolute directory path to list"},
-                "recursive": {"type": "boolean", "default": False, "description": "List recursively"},
+                "recursive": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "List recursively",
+                },
             },
             "required": ["path"],
         },
@@ -432,9 +486,16 @@ BUILTIN_TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "server_id": {"type": "string", "description": "Target server: name, hostname, or ID from the inventory. Stored credentials are used automatically — never pass user@host"},
+                "server_id": {
+                    "type": "string",
+                    "description": "Target server: name, hostname, or ID from the inventory. Stored credentials are used automatically — never pass user@host",
+                },
                 "command": {"type": "string", "description": "Shell command to execute"},
-                "timeout": {"type": "integer", "default": 30, "description": "Command timeout in seconds"},
+                "timeout": {
+                    "type": "integer",
+                    "default": 30,
+                    "description": "Command timeout in seconds",
+                },
             },
             "required": ["server_id", "command"],
         },
@@ -453,7 +514,11 @@ BUILTIN_TOOLS: list[dict] = [
                     "description": "List of target servers (name, hostname, or ID each)",
                 },
                 "command": {"type": "string", "description": "Shell command to execute"},
-                "timeout": {"type": "integer", "default": 30, "description": "Command timeout in seconds"},
+                "timeout": {
+                    "type": "integer",
+                    "default": 30,
+                    "description": "Command timeout in seconds",
+                },
             },
             "required": ["server_ids", "command"],
         },
@@ -471,7 +536,11 @@ BUILTIN_TOOLS: list[dict] = [
                     "description": "Command line to execute (shell operators are not supported)",
                 },
                 "working_dir": {"type": "string", "description": "Working directory (optional)"},
-                "timeout": {"type": "integer", "default": 30, "description": "Command timeout in seconds"},
+                "timeout": {
+                    "type": "integer",
+                    "default": 30,
+                    "description": "Command timeout in seconds",
+                },
             },
             "required": ["command"],
         },
@@ -485,9 +554,16 @@ BUILTIN_TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "server_id": {"type": "string", "description": "Target server: name, hostname, or ID from the inventory"},
+                "server_id": {
+                    "type": "string",
+                    "description": "Target server: name, hostname, or ID from the inventory",
+                },
                 "container": {"type": "string", "description": "Container name or ID"},
-                "timeout": {"type": "integer", "default": 10, "description": "Seconds to wait before killing"},
+                "timeout": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Seconds to wait before killing",
+                },
             },
             "required": ["server_id", "container"],
         },
@@ -500,14 +576,24 @@ BUILTIN_TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "server_id": {"type": "string", "description": "Target server: name, hostname, or ID from the inventory"},
-                "project_dir": {"type": "string", "description": "Path to docker-compose project directory"},
+                "server_id": {
+                    "type": "string",
+                    "description": "Target server: name, hostname, or ID from the inventory",
+                },
+                "project_dir": {
+                    "type": "string",
+                    "description": "Path to docker-compose project directory",
+                },
                 "services": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Specific services to start (empty for all)",
                 },
-                "detach": {"type": "boolean", "default": True, "description": "Run in detached mode"},
+                "detach": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Run in detached mode",
+                },
             },
             "required": ["server_id", "project_dir"],
         },
@@ -520,8 +606,14 @@ BUILTIN_TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "server_id": {"type": "string", "description": "Target server: name, hostname, or ID from the inventory"},
-                "project_dir": {"type": "string", "description": "Path to docker-compose project directory"},
+                "server_id": {
+                    "type": "string",
+                    "description": "Target server: name, hostname, or ID from the inventory",
+                },
+                "project_dir": {
+                    "type": "string",
+                    "description": "Path to docker-compose project directory",
+                },
                 "services": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -555,11 +647,29 @@ BUILTIN_TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "server_id": {"type": "string", "description": "Target server: name, hostname, or ID from the inventory"},
-                "project_dir": {"type": "string", "description": "Path to docker-compose project directory"},
-                "pull": {"type": "boolean", "default": True, "description": "Pull latest images before deploy"},
-                "build": {"type": "boolean", "default": False, "description": "Build images before deploy"},
-                "force_recreate": {"type": "boolean", "default": False, "description": "Force recreate containers"},
+                "server_id": {
+                    "type": "string",
+                    "description": "Target server: name, hostname, or ID from the inventory",
+                },
+                "project_dir": {
+                    "type": "string",
+                    "description": "Path to docker-compose project directory",
+                },
+                "pull": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Pull latest images before deploy",
+                },
+                "build": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Build images before deploy",
+                },
+                "force_recreate": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Force recreate containers",
+                },
             },
             "required": ["server_id", "project_dir"],
         },
@@ -786,6 +896,7 @@ async def _seed_vigilus_principal(db: AsyncSession, tool_name_to_id: dict[str, s
 # Seed runner
 # ────────────────────────────────────────────────────────────
 
+
 async def run_seed(db: AsyncSession) -> None:
     """Insert or update built-in tools and operators.
 
@@ -886,8 +997,10 @@ async def run_seed(db: AsyncSession) -> None:
     # ── Ensure every operator (including user-created) has the memory tools ──
     # The Vigilus principal is excluded: it carries ONLY the research tools.
     all_operators = (
-        await db.execute(select(Operator).where(Operator.name != VIGILUS_PRINCIPAL_NAME))
-    ).scalars().all()
+        (await db.execute(select(Operator).where(Operator.name != VIGILUS_PRINCIPAL_NAME)))
+        .scalars()
+        .all()
+    )
     for op in all_operators:
         for tool_name in MEMORY_TOOL_NAMES:
             tool_id = tool_name_to_id.get(tool_name)

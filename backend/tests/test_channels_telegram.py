@@ -57,8 +57,10 @@ class TestAttachments:
     def test_document_extracted(self):
         msg = _msg(text=None, caption="report")
         msg["document"] = {
-            "file_id": "fid1", "file_name": "report.pdf",
-            "mime_type": "application/pdf", "file_size": 1234,
+            "file_id": "fid1",
+            "file_name": "report.pdf",
+            "mime_type": "application/pdf",
+            "file_size": 1234,
         }
         atts = _extract_attachments(msg)
         assert len(atts) == 1

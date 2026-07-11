@@ -27,8 +27,8 @@ class ResolvedSearchConfig:
     """Effective research config (DB row merged over env settings)."""
 
     enabled: bool
-    search_backend: str          # searxng | firecrawl
-    fetch_backend: str           # builtin | firecrawl
+    search_backend: str  # searxng | firecrawl
+    fetch_backend: str  # builtin | firecrawl
     searxng_url: str | None
     firecrawl_api_key: str | None  # decrypted; never logged
     max_results: int

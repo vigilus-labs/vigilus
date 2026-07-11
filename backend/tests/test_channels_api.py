@@ -53,17 +53,13 @@ async def test_upsert_encrypts_token_and_hides_it(async_client):
 
 @pytest.mark.asyncio
 async def test_unknown_platform_rejected(async_client):
-    resp = await async_client.put(
-        "/api/channels/slack", json={"bot_token": "x"}
-    )
+    resp = await async_client.put("/api/channels/slack", json={"bot_token": "x"})
     assert resp.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_delete_config(async_client):
-    await async_client.put(
-        "/api/channels/telegram", json={"bot_token": "tok"}
-    )
+    await async_client.put("/api/channels/telegram", json={"bot_token": "tok"})
     resp = await async_client.delete("/api/channels/telegram")
     assert resp.status_code == 200
     assert (await async_client.get("/api/channels")).json() == []
@@ -72,9 +68,15 @@ async def test_delete_config(async_client):
 @pytest.mark.asyncio
 async def test_account_crud(async_client):
     # Create an allowed account.
-    resp = await async_client.post("/api/channels/accounts", json={
-        "platform": "telegram", "external_user_id": "42", "allowed": True, "label": "me",
-    })
+    resp = await async_client.post(
+        "/api/channels/accounts",
+        json={
+            "platform": "telegram",
+            "external_user_id": "42",
+            "allowed": True,
+            "label": "me",
+        },
+    )
     assert resp.status_code == 200, resp.text
     acct = resp.json()
     assert acct["allowed"] is True
@@ -86,9 +88,16 @@ async def test_account_crud(async_client):
     assert len(listing) == 1
 
     # Revoke (upsert with allowed=False).
-    revoked = (await async_client.post("/api/channels/accounts", json={
-        "platform": "telegram", "external_user_id": "42", "allowed": False,
-    })).json()
+    revoked = (
+        await async_client.post(
+            "/api/channels/accounts",
+            json={
+                "platform": "telegram",
+                "external_user_id": "42",
+                "allowed": False,
+            },
+        )
+    ).json()
     assert revoked["allowed"] is False
 
     # Delete.
@@ -98,7 +107,12 @@ async def test_account_crud(async_client):
 
 @pytest.mark.asyncio
 async def test_account_unknown_platform_rejected(async_client):
-    resp = await async_client.post("/api/channels/accounts", json={
-        "platform": "signal", "external_user_id": "1", "allowed": True,
-    })
+    resp = await async_client.post(
+        "/api/channels/accounts",
+        json={
+            "platform": "signal",
+            "external_user_id": "1",
+            "allowed": True,
+        },
+    )
     assert resp.status_code == 400

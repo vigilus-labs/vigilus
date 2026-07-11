@@ -44,7 +44,7 @@ class DiscordAdapter(ChannelAdapter):
                 logger.warning("discord.register_commands_failed", error=str(e))
 
         @self._client.event
-        async def on_message(message: "discord.Message"):
+        async def on_message(message: discord.Message):
             if message.author.bot:
                 return
             attachments = [
@@ -144,11 +144,11 @@ class DiscordAdapter(ChannelAdapter):
                 super().__init__(timeout=None)
 
             @ui.button(label="✅ Approve", style=discord.ButtonStyle.success)
-            async def _approve(self, interaction: "discord.Interaction", button: ui.Button):
+            async def _approve(self, interaction: discord.Interaction, button: ui.Button):
                 await adapter._resolve_jit_button(interaction, request_id, True)
 
             @ui.button(label="⛔ Deny", style=discord.ButtonStyle.danger)
-            async def _deny(self, interaction: "discord.Interaction", button: ui.Button):
+            async def _deny(self, interaction: discord.Interaction, button: ui.Button):
                 await adapter._resolve_jit_button(interaction, request_id, False)
 
         try:
@@ -180,6 +180,7 @@ class DiscordAdapter(ChannelAdapter):
         from discord import app_commands
 
         from vigilus.core.commands import get_command_specs
+        from vigilus.integrations.router import handle_inbound
 
         tree = app_commands.CommandTree(self._client)
         for spec in get_command_specs():
@@ -188,7 +189,7 @@ class DiscordAdapter(ChannelAdapter):
 
             # Capture spec by value in a closure factory.
             def _make_handler(captured_spec):
-                async def _callback(interaction: "discord.Interaction") -> None:
+                async def _callback(interaction: discord.Interaction) -> None:
                     await interaction.response.defer()
                     inbound = InboundMessage(
                         platform="discord",

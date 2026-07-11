@@ -21,7 +21,7 @@ def chunk_text(text: str, limit: int) -> list[str]:
     chunks: list[str] = []
     cur = ""
     for line in text.splitlines(keepends=True):
-        while len(line) > limit:           # a single over-long line
+        while len(line) > limit:  # a single over-long line
             if cur:
                 chunks.append(cur)
                 cur = ""

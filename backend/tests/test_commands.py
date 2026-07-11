@@ -121,12 +121,15 @@ async def test_provider_set(async_client, tmp_path, monkeypatch):
     monkeypatch.setattr(orch, "_config_path", lambda: str(tmp_path / "orchestrator.json"))
     monkeypatch.setattr(orch, "_config_cache", None)
 
-    resp = await async_client.post("/api/providers", json={
-        "name": "Test Anthropic",
-        "type": "anthropic",
-        "api_key": "sk-ant-test",
-        "default_model": "claude-opus-4-8",
-    })
+    resp = await async_client.post(
+        "/api/providers",
+        json={
+            "name": "Test Anthropic",
+            "type": "anthropic",
+            "api_key": "sk-ant-test",
+            "default_model": "claude-opus-4-8",
+        },
+    )
     assert resp.status_code == 200, resp.text
 
     result = await _run(async_client, "provider", "test anthropic")

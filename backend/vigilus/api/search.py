@@ -104,6 +104,4 @@ async def test_config(db: AsyncSession = Depends(get_db)):
         return SearchTestResponse(ok=False, backend=cfg.search_backend, error=msg, hint=hint)
     except Exception as exc:  # noqa: BLE001
         return SearchTestResponse(ok=False, backend=cfg.search_backend, error=str(exc))
-    return SearchTestResponse(
-        ok=True, backend=cfg.search_backend, result_count=len(results)
-    )
+    return SearchTestResponse(ok=True, backend=cfg.search_backend, result_count=len(results))

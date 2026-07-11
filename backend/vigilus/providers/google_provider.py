@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from google import genai
 from google.genai import types
@@ -30,54 +31,72 @@ class GoogleProvider(AgentLLM):
         contents = []
         for msg in messages:
             if msg.role == "user":
-                contents.append(types.Content(
-                    role="user",
-                    parts=[types.Part.from_text(text=str(msg.content))],
-                ))
+                contents.append(
+                    types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(text=str(msg.content))],
+                    )
+                )
             elif msg.role == "assistant":
                 parts = []
                 if msg.content:
                     parts.append(types.Part.from_text(text=str(msg.content)))
-                if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                if hasattr(msg, "tool_calls") and msg.tool_calls:
                     for tc in msg.tool_calls:
                         if isinstance(tc, dict):
                             args = tc.get("input", tc.get("arguments", {}))
-                            parts.append(types.Part.from_function_call(
-                                name=tc.get("name", ""),
-                                args=args,
-                            ))
+                            parts.append(
+                                types.Part.from_function_call(
+                                    name=tc.get("name", ""),
+                                    args=args,
+                                )
+                            )
                 if parts:
                     contents.append(types.Content(role="model", parts=parts))
                 else:
-                    contents.append(types.Content(
-                        role="model",
-                        parts=[types.Part.from_text(text=str(msg.content or ""))],
-                    ))
+                    contents.append(
+                        types.Content(
+                            role="model",
+                            parts=[types.Part.from_text(text=str(msg.content or ""))],
+                        )
+                    )
             elif msg.role == "tool":
                 if not msg.tool_use_id:
                     # No originating function_call (e.g. delegation result) —
                     # send as a plain user message instead of an orphan
                     # function_response.
                     label = msg.name or "tool"
-                    contents.append(types.Content(
-                        role="user",
-                        parts=[types.Part.from_text(
-                            text=f"[Result from {label}]\n{msg.content}"
-                        )],
-                    ))
+                    contents.append(
+                        types.Content(
+                            role="user",
+                            parts=[
+                                types.Part.from_text(text=f"[Result from {label}]\n{msg.content}")
+                            ],
+                        )
+                    )
                     continue
                 name = msg.name or "unknown"
                 try:
-                    result = json.loads(str(msg.content)) if isinstance(msg.content, str) else msg.content
+                    result = (
+                        json.loads(str(msg.content))
+                        if isinstance(msg.content, str)
+                        else msg.content
+                    )
                 except (json.JSONDecodeError, TypeError):
                     result = {"output": str(msg.content)}
-                contents.append(types.Content(
-                    role="user",
-                    parts=[types.Part.from_function_response(
-                        name=name,
-                        response=result if isinstance(result, dict) else {"output": str(result)},
-                    )],
-                ))
+                contents.append(
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part.from_function_response(
+                                name=name,
+                                response=(
+                                    result if isinstance(result, dict) else {"output": str(result)}
+                                ),
+                            )
+                        ],
+                    )
+                )
         return contents
 
     def _convert_tools(self, tools: list[ToolSpec] | None) -> list[types.Tool] | None:
@@ -85,11 +104,13 @@ class GoogleProvider(AgentLLM):
             return None
         functions = []
         for tool in tools:
-            functions.append(types.FunctionDeclaration(
-                name=tool.name,
-                description=tool.description,
-                parameters=tool.input_schema if tool.input_schema else None,
-            ))
+            functions.append(
+                types.FunctionDeclaration(
+                    name=tool.name,
+                    description=tool.description,
+                    parameters=tool.input_schema if tool.input_schema else None,
+                )
+            )
         return [types.Tool(function_declarations=functions)]
 
     async def complete(
@@ -137,11 +158,13 @@ class GoogleProvider(AgentLLM):
                             args = {}
                             if fc.args:
                                 args = dict(fc.args)
-                            tool_uses.append(ToolUse(
-                                id=f"call_{fc.name}_{len(tool_uses)}",
-                                name=fc.name,
-                                arguments=args,
-                            ))
+                            tool_uses.append(
+                                ToolUse(
+                                    id=f"call_{fc.name}_{len(tool_uses)}",
+                                    name=fc.name,
+                                    arguments=args,
+                                )
+                            )
 
         usage = {}
         if response.usage_metadata:

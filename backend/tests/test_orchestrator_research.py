@@ -55,14 +55,24 @@ async def test_operators_have_no_web_tools_after_seed(db_session):
     from vigilus.db.models import OperatorTool, Tool
 
     delegatable = (
-        await db_session.execute(select(Operator).where(Operator.delegatable == True))  # noqa: E712
-    ).scalars().all()
+        (
+            await db_session.execute(
+                select(Operator).where(Operator.delegatable.is_(True))
+            )  # noqa: E712
+        )
+        .scalars()
+        .all()
+    )
     for op in delegatable:
         rows = (
-            await db_session.execute(
-                select(OperatorTool).where(OperatorTool.operator_id == op.id)
+            (
+                await db_session.execute(
+                    select(OperatorTool).where(OperatorTool.operator_id == op.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for r in rows:
             t = await db_session.get(Tool, r.tool_id)
             assert t.name not in ("web_search", "web_fetch")

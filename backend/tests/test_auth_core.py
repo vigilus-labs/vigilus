@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import time
-from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from datetime import UTC, datetime, timedelta
 
 import jwt
-import pytest
 
 from vigilus.core.auth import (
     JWT_ALGORITHM,
@@ -18,8 +15,8 @@ from vigilus.core.auth import (
     verify_password,
 )
 
-
 # ── Password hashing ──────────────────────────────────────────────────────────
+
 
 def test_hash_verify_roundtrip():
     h = hash_password("my-password-123")
@@ -37,6 +34,7 @@ def test_garbage_hash_returns_false():
 
 # ── JWT tokens ────────────────────────────────────────────────────────────────
 
+
 def test_create_decode_roundtrip():
     token = create_token("user-abc", token_version=3)
     payload = decode_token(token)
@@ -47,8 +45,9 @@ def test_create_decode_roundtrip():
 
 def test_expired_token_returns_none():
     from vigilus.config import get_settings
+
     settings = get_settings()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": "user-abc",
         "ver": 0,
@@ -70,14 +69,15 @@ def test_wrong_key_returns_none():
     payload = {
         "sub": "user-abc",
         "ver": 0,
-        "iat": datetime.now(timezone.utc),
-        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        "iat": datetime.now(UTC),
+        "exp": datetime.now(UTC) + timedelta(hours=1),
     }
     token = jwt.encode(payload, "wrong-key-entirely", algorithm=JWT_ALGORITHM)
     assert decode_token(token) is None
 
 
 # ── Rate limiter ──────────────────────────────────────────────────────────────
+
 
 def test_allows_before_limit():
     limiter = LoginRateLimiter()
@@ -109,7 +109,7 @@ def test_lockout_expires():
 
     # Fake the locked_until to be in the past
     key = ("alice", "1.2.3.4")
-    limiter._data[key]["locked_until"] = datetime.now(timezone.utc) - timedelta(seconds=1)
+    limiter._data[key]["locked_until"] = datetime.now(UTC) - timedelta(seconds=1)
     assert limiter.check("alice", "1.2.3.4") is True
 
 

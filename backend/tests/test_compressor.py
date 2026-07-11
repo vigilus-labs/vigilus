@@ -1,14 +1,14 @@
 """Tests for context compression."""
 
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
 from vigilus.core.compressor import (
-    ContextCompressor,
-    estimate_tokens,
-    _split_messages,
     _CHARS_PER_TOKEN,
-    _MIN_RECENT_MESSAGES,
+    ContextCompressor,
+    _split_messages,
+    estimate_tokens,
 )
 from vigilus.providers.base import LLMMessage, LLMResponse
 
@@ -26,7 +26,9 @@ def test_estimate_tokens_basic():
     ]
     tokens = estimate_tokens(msgs)
     # Each message has content chars + 20 overhead
-    expected_chars = len("Hello, this is a test message.") + 20 + len("I received your message.") + 20
+    expected_chars = (
+        len("Hello, this is a test message.") + 20 + len("I received your message.") + 20
+    )
     assert tokens == expected_chars // _CHARS_PER_TOKEN
     assert tokens > 0
 
@@ -79,14 +81,18 @@ async def test_compressor_triggers_when_above_threshold():
     # Create many long messages to exceed a low threshold
     msgs = []
     for i in range(30):
-        msgs.append(LLMMessage(
-            role="user",
-            content="x" * 500 + f" message {i}",
-        ))
-        msgs.append(LLMMessage(
-            role="assistant",
-            content="y" * 500 + f" response {i}",
-        ))
+        msgs.append(
+            LLMMessage(
+                role="user",
+                content="x" * 500 + f" message {i}",
+            )
+        )
+        msgs.append(
+            LLMMessage(
+                role="assistant",
+                content="y" * 500 + f" response {i}",
+            )
+        )
 
     compressor = ContextCompressor(provider=provider, max_tokens=1000, trigger_threshold=0.7)
     result, summary = await compressor.compress_if_needed(msgs)

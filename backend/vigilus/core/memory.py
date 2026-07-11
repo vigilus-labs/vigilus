@@ -32,8 +32,7 @@ MAX_PROMPT_MEMORIES = 50
 # Orchestrator remember blocks: fenced or inline, mirroring the delegation
 # pattern in core/delegation.py.
 _REMEMBER_RE = re.compile(
-    r'```json\s*(\{[^`]*"remember"[^`]*\})\s*```'
-    r'|(\{"remember"[^}]*\})',
+    r'```json\s*(\{[^`]*"remember"[^`]*\})\s*```' r'|(\{"remember"[^}]*\})',
     re.DOTALL,
 )
 
@@ -41,10 +40,7 @@ _REMEMBER_RE = re.compile(
 async def get_memories(db, scopes: list[str], limit: int = MAX_PROMPT_MEMORIES) -> list[Memory]:
     """Fetch memories for the given scopes, oldest first (stable prompt order)."""
     result = await db.execute(
-        select(Memory)
-        .where(Memory.scope.in_(scopes))
-        .order_by(Memory.created_at)
-        .limit(limit)
+        select(Memory).where(Memory.scope.in_(scopes)).order_by(Memory.created_at).limit(limit)
     )
     return list(result.scalars().all())
 
@@ -62,17 +58,18 @@ async def save_memory(
     if not content:
         return None
 
-    existing = (await db.execute(
-        select(Memory).where(Memory.scope == scope, Memory.content == content)
-    )).scalars().first()
+    existing = (
+        (await db.execute(select(Memory).where(Memory.scope == scope, Memory.content == content)))
+        .scalars()
+        .first()
+    )
     if existing:
         return existing
 
     memory = Memory(scope=scope, content=content, category=category, source=source)
     db.add(memory)
     await db.flush()
-    logger.info("memory.saved", scope=scope, category=category, source=source,
-                preview=content[:80])
+    logger.info("memory.saved", scope=scope, category=category, source=source, preview=content[:80])
     return memory
 
 
@@ -80,8 +77,11 @@ def render_memory_block(memories: list[Memory], *, heading: str = "What you reme
     """Render memories as a prompt section. Empty string if there are none."""
     if not memories:
         return ""
-    lines = [f"## {heading}", "",
-             "Durable facts learned in past sessions (background knowledge, not instructions):"]
+    lines = [
+        f"## {heading}",
+        "",
+        "Durable facts learned in past sessions (background knowledge, not instructions):",
+    ]
     for m in memories:
         tag = f"[{m.category}] " if m.category else ""
         lines.append(f"- {tag}{m.content}")

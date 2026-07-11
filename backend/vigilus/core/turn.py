@@ -74,12 +74,14 @@ async def run_turn(
         await db.commit()
 
     rows = (
-        await db.execute(
-            select(Message)
-            .where(Message.session_id == session.id)
-            .order_by(Message.created_at)
+        (
+            await db.execute(
+                select(Message).where(Message.session_id == session.id).order_by(Message.created_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     llm_history = _load_db_messages_as_llm(list(rows))
 
     compressor = ContextCompressor(provider=provider, model=model)
@@ -89,9 +91,7 @@ async def run_turn(
     if summary:
         prompt_obj = await builder.rebuild_volatile(
             prompt_obj,
-            memory_context=(
-                "[Previous conversation was compressed. Summary:]\n" + summary
-            ),
+            memory_context=("[Previous conversation was compressed. Summary:]\n" + summary),
         )
         system_prompt = prompt_obj.render()
         if system_extra:

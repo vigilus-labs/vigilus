@@ -56,9 +56,7 @@ async def _wazuh_request(
             headers = {"Authorization": f"Bearer {token}"}
 
             # Make the actual request
-            resp = await client.request(
-                method, url, params=params, json=body, headers=headers
-            )
+            resp = await client.request(method, url, params=params, json=body, headers=headers)
 
             if resp.status_code != 200:
                 return {"error": f"Wazuh API error: {resp.status_code} {resp.text}"}
@@ -68,7 +66,7 @@ async def _wazuh_request(
     except httpx.ConnectError:
         return {"error": f"Cannot connect to Wazuh API at {config['api_url']}"}
     except httpx.TimeoutException:
-        return {"error": f"Wazuh API request timed out"}
+        return {"error": "Wazuh API request timed out"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -102,15 +100,20 @@ async def wazuh_get_alerts(
 
     alerts = []
     for item in result.get("data", {}).get("affected_items", []):
-        alerts.append({
-            "id": item.get("id", item.get("_id", "")),
-            "rule": item.get("rule", {}).get("description", "Unknown"),
-            "level": item.get("rule", {}).get("level", 0),
-            "agent_id": item.get("agent", {}).get("id", ""),
-            "timestamp": item.get("timestamp", ""),
-        })
+        alerts.append(
+            {
+                "id": item.get("id", item.get("_id", "")),
+                "rule": item.get("rule", {}).get("description", "Unknown"),
+                "level": item.get("rule", {}).get("level", 0),
+                "agent_id": item.get("agent", {}).get("id", ""),
+                "timestamp": item.get("timestamp", ""),
+            }
+        )
 
-    return {"alerts": alerts, "total": result.get("data", {}).get("total_affected_items", len(alerts))}
+    return {
+        "alerts": alerts,
+        "total": result.get("data", {}).get("total_affected_items", len(alerts)),
+    }
 
 
 async def wazuh_get_vulnerabilities(
@@ -135,13 +138,15 @@ async def wazuh_get_vulnerabilities(
 
     vulnerabilities = []
     for item in result.get("data", {}).get("affected_items", []):
-        vulnerabilities.append({
-            "cve": item.get("cve", "Unknown"),
-            "severity": item.get("severity", "Unknown"),
-            "title": item.get("title", ""),
-            "agent_id": item.get("agent_id", item.get("agent", {}).get("id", "")),
-            "status": item.get("status", ""),
-        })
+        vulnerabilities.append(
+            {
+                "cve": item.get("cve", "Unknown"),
+                "severity": item.get("severity", "Unknown"),
+                "title": item.get("title", ""),
+                "agent_id": item.get("agent_id", item.get("agent", {}).get("id", "")),
+                "status": item.get("status", ""),
+            }
+        )
 
     return {
         "vulnerabilities": vulnerabilities,
@@ -164,15 +169,17 @@ async def wazuh_get_agents(
 
     agents = []
     for item in result.get("data", {}).get("affected_items", []):
-        agents.append({
-            "id": item.get("id", ""),
-            "name": item.get("name", ""),
-            "ip": item.get("ip", ""),
-            "status": item.get("status", ""),
-            "version": item.get("version", ""),
-            "os": item.get("os", {}).get("name", ""),
-            "last_keepalive": item.get("lastKeepAlive", ""),
-        })
+        agents.append(
+            {
+                "id": item.get("id", ""),
+                "name": item.get("name", ""),
+                "ip": item.get("ip", ""),
+                "status": item.get("status", ""),
+                "version": item.get("version", ""),
+                "os": item.get("os", {}).get("name", ""),
+                "last_keepalive": item.get("lastKeepAlive", ""),
+            }
+        )
 
     return {
         "agents": agents,
@@ -203,14 +210,16 @@ async def wazuh_get_fim(
 
     fim_events = []
     for item in result.get("data", {}).get("affected_items", []):
-        fim_events.append({
-            "file": item.get("file", ""),
-            "date": item.get("date", ""),
-            "size_after": item.get("size_after", 0),
-            "perm_after": item.get("perm_after", ""),
-            "md5_after": item.get("md5_after", ""),
-            "sha1_after": item.get("sha1_after", ""),
-        })
+        fim_events.append(
+            {
+                "file": item.get("file", ""),
+                "date": item.get("date", ""),
+                "size_after": item.get("size_after", 0),
+                "perm_after": item.get("perm_after", ""),
+                "md5_after": item.get("md5_after", ""),
+                "sha1_after": item.get("sha1_after", ""),
+            }
+        )
 
     return {
         "fim": fim_events,
@@ -240,12 +249,14 @@ async def wazuh_search_logs(
 
     logs = []
     for item in result.get("data", {}).get("affected_items", []):
-        logs.append({
-            "timestamp": item.get("timestamp", ""),
-            "tag": item.get("tag", ""),
-            "level": item.get("level", ""),
-            "description": item.get("description", ""),
-        })
+        logs.append(
+            {
+                "timestamp": item.get("timestamp", ""),
+                "tag": item.get("tag", ""),
+                "level": item.get("level", ""),
+                "description": item.get("description", ""),
+            }
+        )
 
     return {
         "logs": logs,

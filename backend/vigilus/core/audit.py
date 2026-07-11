@@ -98,12 +98,15 @@ class AuditService:
         )
 
         bus = get_event_bus()
-        await bus.publish(EventType.ACTION_CREATED, {
-            "action_id": action.id,
-            "event": event,
-            "actor": actor,
-            "outcome": outcome.value,
-        })
+        await bus.publish(
+            EventType.ACTION_CREATED,
+            {
+                "action_id": action.id,
+                "event": event,
+                "actor": actor,
+                "outcome": outcome.value,
+            },
+        )
 
         return action
 
@@ -128,10 +131,17 @@ class AuditService:
         await self._db.flush()
 
         bus = get_event_bus()
-        await bus.publish(EventType.ACTION_UPDATED, {
-            "action_id": action.id,
-            "event": action.event,
-            "outcome": action.outcome.value if isinstance(action.outcome, ActionOutcome) else action.outcome,
-        })
+        await bus.publish(
+            EventType.ACTION_UPDATED,
+            {
+                "action_id": action.id,
+                "event": action.event,
+                "outcome": (
+                    action.outcome.value
+                    if isinstance(action.outcome, ActionOutcome)
+                    else action.outcome
+                ),
+            },
+        )
 
         return action

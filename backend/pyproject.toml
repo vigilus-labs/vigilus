@@ -54,6 +54,18 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+ignore = [
+    # E501: line length is handled by black; remaining hits are long strings/comments
+    "E501",
+    # UP042: converting str-Enums to StrEnum changes str() behavior; needs a careful pass
+    "UP042",
+    # N818: renaming existing exception classes is an API change; revisit deliberately
+    "N818",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Alembic migration filenames are timestamped and hyphenated by template
+"vigilus/db/migrations/versions/*" = ["N999"]
 
 [tool.black]
 target-version = ["py311"]

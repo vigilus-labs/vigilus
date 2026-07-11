@@ -5,23 +5,21 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Any
 
 from vigilus.db.base import get_db
 from vigilus.db.models import (
     McpServer,
-    McpServerStatus,
     McpTransport,
     Operator,
     OperatorTool,
     Tool,
 )
-from vigilus.schemas.mcp import McpServerCreate, McpServerUpdate, McpServerResponse
 from vigilus.mcp_host.manager import McpManager
+from vigilus.schemas.mcp import McpServerCreate, McpServerResponse, McpServerUpdate
 
 router = APIRouter(prefix="/mcp-servers", tags=["MCP Servers"])
+
 
 def _to_response(srv: McpServer) -> McpServerResponse:
     return McpServerResponse(
@@ -39,13 +37,15 @@ def _to_response(srv: McpServer) -> McpServerResponse:
         working_dir=srv.working_dir,
         last_started_at=srv.last_started_at,
         last_error=srv.last_error,
-        created_at=srv.created_at
+        created_at=srv.created_at,
     )
+
 
 @router.get("", response_model=list[McpServerResponse])
 async def list_mcp_servers(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(McpServer).order_by(McpServer.name))
     return [_to_response(s) for s in result.scalars().all()]
+
 
 @router.post("", response_model=McpServerResponse)
 async def create_mcp_server(data: McpServerCreate, db: AsyncSession = Depends(get_db)):
@@ -59,18 +59,19 @@ async def create_mcp_server(data: McpServerCreate, db: AsyncSession = Depends(ge
         autostart=data.autostart,
         github_url=data.github_url,
         install_command=data.install_command,
-        working_dir=data.working_dir
+        working_dir=data.working_dir,
     )
     db.add(srv)
     await db.commit()
     await db.refresh(srv)
-    
+
     if srv.autostart:
         manager = McpManager()
         await manager.start_server(srv)
         await db.refresh(srv)
-        
+
     return _to_response(srv)
+
 
 # ── JSON config import (Claude Desktop / Cursor "mcpServers" format) ────
 
@@ -128,9 +129,9 @@ async def import_mcp_servers(data: McpImportRequest, db: AsyncSession = Depends(
     errors: list[str] = []
 
     for name, entry in entries.items():
-        existing = (await db.execute(
-            select(McpServer).where(McpServer.name == name)
-        )).scalar_one_or_none()
+        existing = (
+            await db.execute(select(McpServer).where(McpServer.name == name))
+        ).scalar_one_or_none()
         if existing:
             skipped.append(name)
             continue
@@ -180,9 +181,7 @@ async def assign_server_tools(
     if not srv:
         raise HTTPException(status_code=404, detail="Server not found")
 
-    tools = (await db.execute(
-        select(Tool).where(Tool.mcp_server_id == server_id)
-    )).scalars().all()
+    tools = (await db.execute(select(Tool).where(Tool.mcp_server_id == server_id))).scalars().all()
     if not tools:
         raise HTTPException(
             status_code=400,
@@ -196,18 +195,25 @@ async def assign_server_tools(
         if not operator:
             raise HTTPException(status_code=400, detail=f"Operator not found: {operator_id}")
         for tool in tools:
-            existing = (await db.execute(
-                select(OperatorTool).where(
-                    OperatorTool.operator_id == operator_id,
-                    OperatorTool.tool_id == tool.id,
+            existing = (
+                await db.execute(
+                    select(OperatorTool).where(
+                        OperatorTool.operator_id == operator_id,
+                        OperatorTool.tool_id == tool.id,
+                    )
                 )
-            )).scalar_one_or_none()
+            ).scalar_one_or_none()
             if not existing:
                 db.add(OperatorTool(operator_id=operator_id, tool_id=tool.id))
                 assigned += 1
 
     await db.commit()
-    return {"ok": True, "tools": len(tools), "operators": len(data.operator_ids), "assigned": assigned}
+    return {
+        "ok": True,
+        "tools": len(tools),
+        "operators": len(data.operator_ids),
+        "assigned": assigned,
+    }
 
 
 @router.get("/{server_id}", response_model=McpServerResponse)
@@ -217,33 +223,47 @@ async def get_mcp_server(server_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Server not found")
     return _to_response(srv)
 
+
 @router.patch("/{server_id}", response_model=McpServerResponse)
-async def update_mcp_server(server_id: str, data: McpServerUpdate, db: AsyncSession = Depends(get_db)):
+async def update_mcp_server(
+    server_id: str, data: McpServerUpdate, db: AsyncSession = Depends(get_db)
+):
     srv = await db.get(McpServer, server_id)
     if not srv:
         raise HTTPException(status_code=404, detail="Server not found")
-        
-    if data.name is not None: srv.name = data.name
-    if data.command is not None: srv.command = data.command
-    if data.args is not None: srv.args = data.args
-    if data.env_vars is not None: srv.env_vars = data.env_vars
-    if data.transport is not None: srv.transport = data.transport
-    if data.sse_url is not None: srv.sse_url = data.sse_url
-    if data.autostart is not None: srv.autostart = data.autostart
-    if hasattr(data, "github_url") and data.github_url is not None: srv.github_url = data.github_url
-    if hasattr(data, "install_command") and data.install_command is not None: srv.install_command = data.install_command
-    if hasattr(data, "working_dir") and data.working_dir is not None: srv.working_dir = data.working_dir
-    
+
+    if data.name is not None:
+        srv.name = data.name
+    if data.command is not None:
+        srv.command = data.command
+    if data.args is not None:
+        srv.args = data.args
+    if data.env_vars is not None:
+        srv.env_vars = data.env_vars
+    if data.transport is not None:
+        srv.transport = data.transport
+    if data.sse_url is not None:
+        srv.sse_url = data.sse_url
+    if data.autostart is not None:
+        srv.autostart = data.autostart
+    if hasattr(data, "github_url") and data.github_url is not None:
+        srv.github_url = data.github_url
+    if hasattr(data, "install_command") and data.install_command is not None:
+        srv.install_command = data.install_command
+    if hasattr(data, "working_dir") and data.working_dir is not None:
+        srv.working_dir = data.working_dir
+
     await db.commit()
     await db.refresh(srv)
     return _to_response(srv)
+
 
 @router.delete("/{server_id}")
 async def delete_mcp_server(server_id: str, db: AsyncSession = Depends(get_db)):
     srv = await db.get(McpServer, server_id)
     if not srv:
         raise HTTPException(status_code=404, detail="Server not found")
-        
+
     manager = McpManager()
     await manager.stop_server(server_id)
     manager.remove_repo(server_id)  # don't orphan the managed clone on disk
@@ -252,16 +272,18 @@ async def delete_mcp_server(server_id: str, db: AsyncSession = Depends(get_db)):
     await db.commit()
     return {"ok": True}
 
+
 @router.post("/{server_id}/start", response_model=McpServerResponse)
 async def start_mcp_server(server_id: str, db: AsyncSession = Depends(get_db)):
     srv = await db.get(McpServer, server_id)
     if not srv:
         raise HTTPException(status_code=404, detail="Server not found")
-        
+
     manager = McpManager()
     await manager.start_server(srv)
     await db.refresh(srv)
     return _to_response(srv)
+
 
 @router.post("/{server_id}/reinstall", response_model=McpServerResponse)
 async def reinstall_mcp_server(server_id: str, db: AsyncSession = Depends(get_db)):
@@ -289,7 +311,7 @@ async def stop_mcp_server(server_id: str, db: AsyncSession = Depends(get_db)):
     srv = await db.get(McpServer, server_id)
     if not srv:
         raise HTTPException(status_code=404, detail="Server not found")
-        
+
     manager = McpManager()
     await manager.stop_server(server_id)
     await db.refresh(srv)

@@ -62,8 +62,8 @@ def _cfg_to_response(cfg: ChannelConfig | None) -> ChannelConfigResponse:
 @router.get("", response_model=list[ChannelConfigResponse])
 async def list_configs(db: AsyncSession = Depends(get_db)):
     rows = (
-        await db.execute(select(ChannelConfig).order_by(ChannelConfig.platform))
-    ).scalars().all()
+        (await db.execute(select(ChannelConfig).order_by(ChannelConfig.platform))).scalars().all()
+    )
     return [_cfg_to_response(c) for c in rows]
 
 
@@ -77,9 +77,7 @@ async def upsert_config(
         raise HTTPException(status_code=400, detail=f"Unknown platform: {platform}")
 
     cfg = (
-        await db.execute(
-            select(ChannelConfig).where(ChannelConfig.platform == platform)
-        )
+        await db.execute(select(ChannelConfig).where(ChannelConfig.platform == platform))
     ).scalar_one_or_none()
 
     if cfg is None:
@@ -124,9 +122,7 @@ async def delete_config(platform: str, db: AsyncSession = Depends(get_db)):
     if platform not in _VALID_PLATFORMS:
         raise HTTPException(status_code=400, detail=f"Unknown platform: {platform}")
     cfg = (
-        await db.execute(
-            select(ChannelConfig).where(ChannelConfig.platform == platform)
-        )
+        await db.execute(select(ChannelConfig).where(ChannelConfig.platform == platform))
     ).scalar_one_or_none()
     if cfg is None:
         raise HTTPException(status_code=404, detail=f"No {platform} channel configured.")
@@ -147,9 +143,7 @@ async def test_config(platform: str, db: AsyncSession = Depends(get_db)):
     if platform not in _VALID_PLATFORMS:
         raise HTTPException(status_code=400, detail=f"Unknown platform: {platform}")
     cfg = (
-        await db.execute(
-            select(ChannelConfig).where(ChannelConfig.platform == platform)
-        )
+        await db.execute(select(ChannelConfig).where(ChannelConfig.platform == platform))
     ).scalar_one_or_none()
     if cfg is None or not cfg.bot_token_enc:
         return ChannelTestResponse(ok=False, error="No token configured for this platform.")
@@ -158,9 +152,7 @@ async def test_config(platform: str, db: AsyncSession = Depends(get_db)):
     if platform == "telegram":
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                r = await client.post(
-                    f"https://api.telegram.org/bot{token}/getMe"
-                )
+                r = await client.post(f"https://api.telegram.org/bot{token}/getMe")
             body = r.json()
             if body.get("ok"):
                 username = (body.get("result") or {}).get("username")
@@ -168,7 +160,9 @@ async def test_config(platform: str, db: AsyncSession = Depends(get_db)):
                     cfg.bot_username = username
                     await db.commit()
                 return ChannelTestResponse(ok=True, bot_username=username)
-            return ChannelTestResponse(ok=False, error=body.get("description", "Telegram rejected the token."))
+            return ChannelTestResponse(
+                ok=False, error=body.get("description", "Telegram rejected the token.")
+            )
         except Exception as e:  # noqa: BLE001
             return ChannelTestResponse(ok=False, error=str(e))
 
@@ -194,12 +188,14 @@ async def _fetch_telegram_username(token: str) -> str | None:
 @router.get("/accounts", response_model=list[ChannelAccountResponse])
 async def list_accounts(db: AsyncSession = Depends(get_db)):
     rows = (
-        await db.execute(
-            select(ChannelAccount).order_by(
-                ChannelAccount.platform, ChannelAccount.created_at
+        (
+            await db.execute(
+                select(ChannelAccount).order_by(ChannelAccount.platform, ChannelAccount.created_at)
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [
         ChannelAccountResponse(
             id=a.id,

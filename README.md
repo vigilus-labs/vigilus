@@ -1,5 +1,8 @@
 # Vigilus
 
+[![CI](https://github.com/vigilus-labs/vigilus/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vigilus-labs/vigilus/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 **Self-hosted, AI-powered homelab operations platform.**
 
 > ⚠️ **Status: Beta.** Vigilus is under active development and still has rough
@@ -266,6 +269,12 @@ toggle *Respond in groups* for that platform. Slash commands (`/help`,
 - **Strict**: a denied tool call **pauses the whole delegation** while a JIT approval card appears inline in the chat (and on the JIT page). Approve and the operator continues automatically; deny and it aborts that action. The wait window is `VIGILUS_JIT_WAIT_SECONDS` (default 180).
 - **Lenient**: the same requests are auto-approved and execution continues immediately — still fully logged.
 
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for local
+setup, branch conventions, and the PR process. Ongoing work happens on the
+`dev` branch; `main` tracks the latest stable release.
+
 ## License
 
-MIT
+[MIT](LICENSE)

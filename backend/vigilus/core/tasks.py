@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Awaitable, TypeVar
+from datetime import UTC, datetime
+from typing import TypeVar
 from uuid import uuid4
 
 import structlog
@@ -25,7 +26,7 @@ logger = structlog.get_logger(__name__)
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # Keep at most this many activity events per turn (most recent kept).
@@ -109,11 +110,13 @@ class RunningTask:
         return self.cancel_event.is_set()
 
     def record(self, event_type: str, data: dict | None) -> None:
-        self.activity.append({
-            "type": event_type,
-            "data": data or {},
-            "ts": _utcnow().isoformat(),
-        })
+        self.activity.append(
+            {
+                "type": event_type,
+                "data": data or {},
+                "ts": _utcnow().isoformat(),
+            }
+        )
         if len(self.activity) > ACTIVITY_CAP:
             del self.activity[: len(self.activity) - ACTIVITY_CAP]
 
@@ -136,9 +139,9 @@ class RunningTask:
 class TaskRegistry:
     """Singleton tracking running orchestrator turns, keyed by session_id."""
 
-    _instance: "TaskRegistry | None" = None
+    _instance: TaskRegistry | None = None
 
-    def __new__(cls) -> "TaskRegistry":
+    def __new__(cls) -> TaskRegistry:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._tasks = {}
@@ -174,7 +177,9 @@ class TaskRegistry:
         task = self._tasks.get(session_id)
         return bool(task and task.cancel_event.is_set())
 
-    def update(self, session_id: str, *, step: str | None = None, operator: str | None = None) -> None:
+    def update(
+        self, session_id: str, *, step: str | None = None, operator: str | None = None
+    ) -> None:
         task = self._tasks.get(session_id)
         if not task:
             return

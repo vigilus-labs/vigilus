@@ -32,7 +32,8 @@ async def db_session() -> AsyncSession:
 
 @pytest_asyncio.fixture
 async def async_client(db_session: AsyncSession):
-    from httpx import AsyncClient, ASGITransport
+    from httpx import ASGITransport, AsyncClient
+
     from vigilus.api.deps import require_user
     from vigilus.db.base import get_db
     from vigilus.db.models import User
@@ -49,16 +50,15 @@ async def async_client(db_session: AsyncSession):
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[require_user] = override_require_user
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
 
 @pytest_asyncio.fixture
 async def unauthenticated_client(db_session: AsyncSession):
     """Client without the require_user override — for auth endpoint tests."""
-    from httpx import AsyncClient, ASGITransport
+    from httpx import ASGITransport, AsyncClient
+
     from vigilus.db.base import get_db
     from vigilus.main import create_app
 
@@ -69,8 +69,5 @@ async def unauthenticated_client(db_session: AsyncSession):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
-

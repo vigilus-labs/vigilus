@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,8 +62,8 @@ def _relative_age(dt: datetime | None) -> str:
     if dt is None:
         return "?"
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    delta = datetime.now(timezone.utc) - dt
+        dt = dt.replace(tzinfo=UTC)
+    delta = datetime.now(UTC) - dt
     seconds = int(delta.total_seconds())
     if seconds < 60:
         return "just now"
@@ -106,9 +106,9 @@ async def _cmd_status(args: str, session: Session | None, db: AsyncSession) -> C
         else:
             provider_name = "missing (reconfigure)"
 
-    operators = (await db.execute(
-        select(Operator).where(Operator.enabled == True)  # noqa: E712
-    )).scalars().all()
+    operators = (
+        (await db.execute(select(Operator).where(Operator.enabled.is_(True)))).scalars().all()
+    )
     running = get_task_registry().list_running()
 
     text = (
@@ -140,7 +140,9 @@ async def _cmd_sessions(args: str, session: Session | None, db: AsyncSession) ->
     lines = []
     for i, s in enumerate(sessions, start=1):
         marker = " ← current" if session and s.id == session.id else ""
-        lines.append(f"{i}. **{s.title or 'Chat Session'}** — {_relative_age(s.last_active_at)}{marker}")
+        lines.append(
+            f"{i}. **{s.title or 'Chat Session'}** — {_relative_age(s.last_active_at)}{marker}"
+        )
     lines.append("\nSwitch with `/switch <number|title>`.")
     return CommandResult(
         kind="markdown",
@@ -281,14 +283,21 @@ async def _cmd_provider(args: str, session: Session | None, db: AsyncSession) ->
 
 
 async def _cmd_operators(args: str, session: Session | None, db: AsyncSession) -> CommandResult:
-    operators = (await db.execute(
-        select(Operator).where(Operator.enabled == True).order_by(Operator.name)  # noqa: E712
-    )).scalars().all()
+    operators = (
+        (
+            await db.execute(
+                select(Operator)
+                .where(Operator.enabled.is_(True))
+                .order_by(Operator.name)  # noqa: E712
+            )
+        )
+        .scalars()
+        .all()
+    )
     if not operators:
         return CommandResult(kind="markdown", text="No enabled operators.")
     lines = [
-        f"- **{op.name}** ({op.permission_level.value}) — {op.description}"
-        for op in operators
+        f"- **{op.name}** ({op.permission_level.value}) — {op.description}" for op in operators
     ]
     lines.append("\nTag one in a message with `@OperatorName` to delegate directly.")
     return CommandResult(kind="markdown", text="\n".join(lines))
@@ -302,11 +311,15 @@ async def _cmd_memory(args: str, session: Session | None, db: AsyncSession) -> C
     rest = parts[1] if len(parts) > 1 else ""
 
     if sub == "list":
-        memories = (await db.execute(
-            select(Memory).order_by(Memory.created_at.desc()).limit(30)
-        )).scalars().all()
+        memories = (
+            (await db.execute(select(Memory).order_by(Memory.created_at.desc()).limit(30)))
+            .scalars()
+            .all()
+        )
         if not memories:
-            return CommandResult(kind="markdown", text="No memories saved yet — `/memory add <text>`.")
+            return CommandResult(
+                kind="markdown", text="No memories saved yet — `/memory add <text>`."
+            )
         lines = []
         for m in memories:
             content = m.content if len(m.content) <= 100 else m.content[:97] + "…"
@@ -329,7 +342,9 @@ async def _cmd_memory(args: str, session: Session | None, db: AsyncSession) -> C
         if not matches:
             return _error(f"No memory with id starting “{prefix}”.")
         if len(matches) > 1:
-            return _error(f"Prefix “{prefix}” matches {len(matches)} memories — use more characters.")
+            return _error(
+                f"Prefix “{prefix}” matches {len(matches)} memories — use more characters."
+            )
         await db.delete(matches[0])
         await db.commit()
         return CommandResult(kind="config_changed", text="Memory deleted.")
@@ -378,77 +393,169 @@ async def _cmd_soul(args: str, session: Session | None, db: AsyncSession) -> Com
 
 # ── Registry ────────────────────────────────────────────────
 
-_register(CommandSpec(
-    name="help", summary="List available commands", usage="/help",
-), _cmd_help)
-_register(CommandSpec(
-    name="status", summary="Backend version, provider, model, and running tasks", usage="/status",
-), _cmd_status)
-_register(CommandSpec(
-    name="new", summary="Start a new chat", usage="/new [title]",
-    args=[CommandArg(name="title", description="Optional title for the chat")],
-), _cmd_new)
-_register(CommandSpec(
-    name="sessions", summary="List chat sessions", usage="/sessions",
-), _cmd_sessions)
-_register(CommandSpec(
-    name="switch", summary="Switch to another chat", usage="/switch <number|title>",
-    args=[CommandArg(name="target", required=True, description="Session number or title prefix")],
-), _cmd_switch)
-_register(CommandSpec(
-    name="rename", summary="Rename the current chat", usage="/rename <title>",
-    args=[CommandArg(name="title", required=True, description="New title")],
-    needs_session=True,
-), _cmd_rename)
-_register(CommandSpec(
-    name="delete", summary="Delete the current chat", usage="/delete",
-    needs_session=True,
-), _cmd_delete)
-_register(CommandSpec(
-    name="model", summary="Show or set the orchestrator model", usage="/model [name]",
-    args=[CommandArg(name="name", description="Model name (omit to show current)")],
-), _cmd_model)
-_register(CommandSpec(
-    name="provider", summary="Show or set the orchestrator provider", usage="/provider [name]",
-    args=[CommandArg(name="name", description="Provider name (omit to list)")],
-), _cmd_provider)
-_register(CommandSpec(
-    name="operators", summary="List enabled operators", usage="/operators",
-), _cmd_operators)
-_register(CommandSpec(
-    name="memory", summary="List, add, or remove memories", usage="/memory [list|add <text>|rm <id>]",
-    args=[CommandArg(name="subcommand", description="list (default), add <text>, or rm <id-prefix>")],
-), _cmd_memory)
-_register(CommandSpec(
-    name="tasks", summary="List running tasks", usage="/tasks",
-), _cmd_tasks)
-_register(CommandSpec(
-    name="stop", summary="Stop the running task in this chat", usage="/stop",
-    needs_session=True,
-), _cmd_stop)
-_register(CommandSpec(
-    name="soul", summary="Show or set Vigilus's persona", usage="/soul [text]",
-    args=[CommandArg(name="text", description="Persona text (omit to show current)")],
-), _cmd_soul)
+_register(
+    CommandSpec(
+        name="help",
+        summary="List available commands",
+        usage="/help",
+    ),
+    _cmd_help,
+)
+_register(
+    CommandSpec(
+        name="status",
+        summary="Backend version, provider, model, and running tasks",
+        usage="/status",
+    ),
+    _cmd_status,
+)
+_register(
+    CommandSpec(
+        name="new",
+        summary="Start a new chat",
+        usage="/new [title]",
+        args=[CommandArg(name="title", description="Optional title for the chat")],
+    ),
+    _cmd_new,
+)
+_register(
+    CommandSpec(
+        name="sessions",
+        summary="List chat sessions",
+        usage="/sessions",
+    ),
+    _cmd_sessions,
+)
+_register(
+    CommandSpec(
+        name="switch",
+        summary="Switch to another chat",
+        usage="/switch <number|title>",
+        args=[
+            CommandArg(name="target", required=True, description="Session number or title prefix")
+        ],
+    ),
+    _cmd_switch,
+)
+_register(
+    CommandSpec(
+        name="rename",
+        summary="Rename the current chat",
+        usage="/rename <title>",
+        args=[CommandArg(name="title", required=True, description="New title")],
+        needs_session=True,
+    ),
+    _cmd_rename,
+)
+_register(
+    CommandSpec(
+        name="delete",
+        summary="Delete the current chat",
+        usage="/delete",
+        needs_session=True,
+    ),
+    _cmd_delete,
+)
+_register(
+    CommandSpec(
+        name="model",
+        summary="Show or set the orchestrator model",
+        usage="/model [name]",
+        args=[CommandArg(name="name", description="Model name (omit to show current)")],
+    ),
+    _cmd_model,
+)
+_register(
+    CommandSpec(
+        name="provider",
+        summary="Show or set the orchestrator provider",
+        usage="/provider [name]",
+        args=[CommandArg(name="name", description="Provider name (omit to list)")],
+    ),
+    _cmd_provider,
+)
+_register(
+    CommandSpec(
+        name="operators",
+        summary="List enabled operators",
+        usage="/operators",
+    ),
+    _cmd_operators,
+)
+_register(
+    CommandSpec(
+        name="memory",
+        summary="List, add, or remove memories",
+        usage="/memory [list|add <text>|rm <id>]",
+        args=[
+            CommandArg(
+                name="subcommand", description="list (default), add <text>, or rm <id-prefix>"
+            )
+        ],
+    ),
+    _cmd_memory,
+)
+_register(
+    CommandSpec(
+        name="tasks",
+        summary="List running tasks",
+        usage="/tasks",
+    ),
+    _cmd_tasks,
+)
+_register(
+    CommandSpec(
+        name="stop",
+        summary="Stop the running task in this chat",
+        usage="/stop",
+        needs_session=True,
+    ),
+    _cmd_stop,
+)
+_register(
+    CommandSpec(
+        name="soul",
+        summary="Show or set Vigilus's persona",
+        usage="/soul [text]",
+        args=[CommandArg(name="text", description="Persona text (omit to show current)")],
+    ),
+    _cmd_soul,
+)
 
 # Client-executed commands — declared here so both clients build identical
 # autocomplete menus, but handled inside each client.
-_register(CommandSpec(
-    name="login", summary="Add or update an LLM provider (guided)", usage="/login",
-    execution="client",
-))
-_register(CommandSpec(
-    name="clear", summary="Clear the visible transcript (history is kept)", usage="/clear",
-    execution="client",
-))
-_register(CommandSpec(
-    name="logout", summary="Sign out", usage="/logout",
-    execution="client",
-))
-_register(CommandSpec(
-    name="quit", summary="Exit the TUI", usage="/quit",
-    execution="client",
-))
+_register(
+    CommandSpec(
+        name="login",
+        summary="Add or update an LLM provider (guided)",
+        usage="/login",
+        execution="client",
+    )
+)
+_register(
+    CommandSpec(
+        name="clear",
+        summary="Clear the visible transcript (history is kept)",
+        usage="/clear",
+        execution="client",
+    )
+)
+_register(
+    CommandSpec(
+        name="logout",
+        summary="Sign out",
+        usage="/logout",
+        execution="client",
+    )
+)
+_register(
+    CommandSpec(
+        name="quit",
+        summary="Exit the TUI",
+        usage="/quit",
+        execution="client",
+    )
+)
 
 
 # ── Dispatch ────────────────────────────────────────────────

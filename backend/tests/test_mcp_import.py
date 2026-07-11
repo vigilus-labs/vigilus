@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from sqlalchemy import select
+
 from vigilus.db.models import (
     McpServer,
     McpTransport,
@@ -13,7 +15,6 @@ from vigilus.db.models import (
     Tool,
     ToolImplementationType,
 )
-from sqlalchemy import select
 
 STANDARD_CONFIG = {
     "mcpServers": {
@@ -50,9 +51,7 @@ class TestMcpImport:
 
     async def test_import_bare_mapping(self, async_client):
         bare = {"fetch": {"command": "uvx", "args": ["mcp-server-fetch"]}}
-        resp = await async_client.post(
-            "/api/mcp-servers/import", json={"config": json.dumps(bare)}
-        )
+        resp = await async_client.post("/api/mcp-servers/import", json={"config": json.dumps(bare)})
         assert resp.status_code == 200
         assert len(resp.json()["created"]) == 1
 
@@ -66,9 +65,7 @@ class TestMcpImport:
 
     async def test_import_sse_url_entry(self, async_client):
         cfg = {"mcpServers": {"remote": {"url": "https://example.com/sse"}}}
-        resp = await async_client.post(
-            "/api/mcp-servers/import", json={"config": json.dumps(cfg)}
-        )
+        resp = await async_client.post("/api/mcp-servers/import", json={"config": json.dumps(cfg)})
         assert resp.status_code == 200
         created = resp.json()["created"][0]
         assert created["transport"] == "sse"
@@ -83,16 +80,12 @@ class TestMcpImport:
         assert set(body["skipped"]) == {"filesystem", "git"}
 
     async def test_import_invalid_json(self, async_client):
-        resp = await async_client.post(
-            "/api/mcp-servers/import", json={"config": "not json {{"}
-        )
+        resp = await async_client.post("/api/mcp-servers/import", json={"config": "not json {{"})
         assert resp.status_code == 422
 
     async def test_import_entry_without_command_reports_error(self, async_client):
         cfg = {"mcpServers": {"broken": {"args": ["foo"]}}}
-        resp = await async_client.post(
-            "/api/mcp-servers/import", json={"config": json.dumps(cfg)}
-        )
+        resp = await async_client.post("/api/mcp-servers/import", json={"config": json.dumps(cfg)})
         assert resp.status_code == 200
         body = resp.json()
         assert body["created"] == []
@@ -130,9 +123,15 @@ class TestAssignTools:
         assert resp.status_code == 200, resp.text
         assert resp.json()["assigned"] == 3
 
-        links = (await db_session.execute(
-            select(OperatorTool).where(OperatorTool.operator_id == op.id)
-        )).scalars().all()
+        links = (
+            (
+                await db_session.execute(
+                    select(OperatorTool).where(OperatorTool.operator_id == op.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(links) == 3
 
     async def test_assign_idempotent(self, async_client, db_session):

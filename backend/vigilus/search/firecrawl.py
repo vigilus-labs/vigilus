@@ -46,9 +46,7 @@ class FirecrawlBackend(SearchBackend, FetchBackend):
         payload = {"query": query, "limit": max_results, "sources": ["web"]}
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                resp = await client.post(
-                    f"{_BASE}/search", json=payload, headers=self._headers
-                )
+                resp = await client.post(f"{_BASE}/search", json=payload, headers=self._headers)
         except httpx.HTTPError as exc:
             raise SearchError(f"Firecrawl search failed: {exc}") from exc
 
@@ -89,9 +87,7 @@ class FirecrawlBackend(SearchBackend, FetchBackend):
         }
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds + 5) as client:
-                resp = await client.post(
-                    f"{_BASE}/scrape", json=payload, headers=self._headers
-                )
+                resp = await client.post(f"{_BASE}/scrape", json=payload, headers=self._headers)
         except httpx.HTTPError as exc:
             raise SearchError(f"Firecrawl scrape failed: {exc}") from exc
 

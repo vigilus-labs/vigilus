@@ -33,7 +33,11 @@ async def create_memory(data: MemoryCreate, db: AsyncSession = Depends(get_db)):
     from vigilus.core.memory import save_memory
 
     memory = await save_memory(
-        db, scope=data.scope, content=data.content, category=data.category, source="user",
+        db,
+        scope=data.scope,
+        content=data.content,
+        category=data.category,
+        source="user",
     )
     await db.commit()
     await db.refresh(memory)

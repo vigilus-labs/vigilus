@@ -27,11 +27,11 @@ logger = structlog.get_logger(__name__)
 class MigrationStatus:
     """Where the DB schema sits relative to the latest Alembic revision."""
 
-    current: str | None          # revision the DB is stamped at (None = unstamped)
-    heads: tuple[str, ...]       # latest revision id(s) in the migrations dir
-    up_to_date: bool             # False only when stamped AND behind a known head
-    stamped: bool                # whether alembic_version has a row
-    detail: str                  # human-readable guidance when behind
+    current: str | None  # revision the DB is stamped at (None = unstamped)
+    heads: tuple[str, ...]  # latest revision id(s) in the migrations dir
+    up_to_date: bool  # False only when stamped AND behind a known head
+    stamped: bool  # whether alembic_version has a row
+    detail: str  # human-readable guidance when behind
 
 
 def _alembic_config():
@@ -105,9 +105,9 @@ async def check_migration_status(database_url: str | None = None) -> MigrationSt
 class NmapAccess:
     installed: bool
     path: str | None
-    privileged_ok: bool           # can -sS/-O/-sU scans run?
-    method: str                   # "sudo-nopasswd" | "caps" | "root" | "none"
-    detail: str                   # human-readable explanation
+    privileged_ok: bool  # can -sS/-O/-sU scans run?
+    method: str  # "sudo-nopasswd" | "caps" | "root" | "none"
+    detail: str  # human-readable explanation
 
 
 def check_nmap_access() -> NmapAccess:
@@ -135,14 +135,20 @@ def check_nmap_access() -> NmapAccess:
     # setcap on the binary (no sudo needed at all).
     if _has_raw_caps(path):
         return NmapAccess(
-            True, path, True, "caps",
+            True,
+            path,
+            True,
+            "caps",
             "nmap has cap_net_raw — privileged scans work without sudo.",
         )
 
     # Passwordless sudo for nmap (what the MCP server relies on).
     if _sudo_nopasswd_for_nmap():
         return NmapAccess(
-            True, path, True, "sudo-nopasswd",
+            True,
+            path,
+            True,
+            "sudo-nopasswd",
             "Passwordless sudo for nmap is configured — privileged scans work.",
         )
 
@@ -184,10 +190,8 @@ def _has_raw_caps(nmap_path: str) -> bool:
     if not getcap:
         return False
     try:
-        r = subprocess.run(
-            [getcap, nmap_path], capture_output=True, text=True, timeout=5
-        )
-        out = (r.stdout or "")
+        r = subprocess.run([getcap, nmap_path], capture_output=True, text=True, timeout=5)
+        out = r.stdout or ""
         return "cap_net_raw" in out and "cap_net_raw+ep" in out.replace(" ", "")
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return False

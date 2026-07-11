@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import structlog
@@ -30,7 +29,10 @@ async def docker_list(
     )
 
     if result.get("exit_code", 1) != 0:
-        return {"error": result.get("error", result.get("stderr", "Unknown error")), "server_id": server_id}
+        return {
+            "error": result.get("error", result.get("stderr", "Unknown error")),
+            "server_id": server_id,
+        }
 
     containers = []
     for line in result.get("stdout", "").strip().split("\n"):
@@ -38,13 +40,15 @@ async def docker_list(
             continue
         parts = line.split("|")
         if len(parts) >= 4:
-            containers.append({
-                "id": parts[0].strip(),
-                "name": parts[1].strip(),
-                "status": parts[2].strip(),
-                "image": parts[3].strip(),
-                "ports": parts[4].strip() if len(parts) > 4 else "",
-            })
+            containers.append(
+                {
+                    "id": parts[0].strip(),
+                    "name": parts[1].strip(),
+                    "status": parts[2].strip(),
+                    "image": parts[3].strip(),
+                    "ports": parts[4].strip() if len(parts) > 4 else "",
+                }
+            )
 
     return {"containers": containers, "count": len(containers), "server_id": server_id}
 
@@ -103,6 +107,7 @@ async def docker_inspect(
         return {"error": result.get("stderr", "Failed to inspect container")}
 
     import json
+
     try:
         data = json.loads(result.get("stdout", "[]"))
         return {"container": container, "server_id": server_id, "inspect": data}

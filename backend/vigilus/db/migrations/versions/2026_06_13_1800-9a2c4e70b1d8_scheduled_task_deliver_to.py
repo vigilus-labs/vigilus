@@ -8,25 +8,25 @@ Adds a nullable JSON ``deliver_to`` column on ``scheduled_tasks``. When set to
 ``{"platform": "...", "chat_id": "..."}`` a successful scheduled run also
 pushes its summary to that channel via the gateway.
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '9a2c4e70b1d8'
-down_revision: Union[str, None] = '45cbf17bbdbf'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "9a2c4e70b1d8"
+down_revision: str | None = "45cbf17bbdbf"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     op.add_column(
-        'scheduled_tasks',
-        sa.Column('deliver_to', sa.JSON(), nullable=True),
+        "scheduled_tasks",
+        sa.Column("deliver_to", sa.JSON(), nullable=True),
     )
 
 
 def downgrade() -> None:
-    op.drop_column('scheduled_tasks', 'deliver_to')
+    op.drop_column("scheduled_tasks", "deliver_to")

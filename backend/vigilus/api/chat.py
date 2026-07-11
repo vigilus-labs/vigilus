@@ -7,50 +7,50 @@ to receive user messages and delegate work to specialist Operators.
 
 from __future__ import annotations
 
-import json
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
-from sqlalchemy import delete as sa_delete, select
-from sqlalchemy.orm import selectinload
-from sqlalchemy.ext.asyncio import AsyncSession
+import json
 from typing import Any
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from vigilus.db.base import get_db, get_session_factory
-from vigilus.db.models import ChannelChat, Session, Message, Operator, OperatorTool, MessageRole
-from vigilus.schemas.chat import (
-    SessionCreate,
-    SessionResponse,
-    MessageCreate,
-    MessageResponse,
-    SessionUpdate,
+from vigilus.api.sse import (
+    EVT_DELEGATION_RESULT,
+    EVT_DELEGATION_START,
+    EVT_DONE,
+    EVT_ERROR,
+    EVT_JIT_REQUEST,
+    EVT_TEXT_DELTA,
+    EVT_THINKING,
+    EVT_TOOL_CALL,
+    EVT_TOOL_RESULT,
+    StreamBridge,
+    register_bridge,
+    unregister_bridge,
 )
+from vigilus.core.compressor import ContextCompressor
+from vigilus.core.delegation import execute_delegation, parse_delegation, strip_delegation
 from vigilus.core.events import get_event_bus
 from vigilus.core.orchestrator import (
     OrchestratorNotConfigured,
     load_orchestrator_config,
     resolve_orchestrator_provider,
 )
-from vigilus.core.delegation import parse_delegation, strip_delegation, execute_delegation
 from vigilus.core.prompt_builder import PromptBuilder
 from vigilus.core.tasks import TaskCancelled, await_cancelled, get_task_registry
-from vigilus.core.compressor import ContextCompressor, estimate_tokens
-from vigilus.providers.base import LLMMessage, LLMResponse, ToolSpec, ToolUse
-from vigilus.api.sse import (
-    StreamBridge,
-    register_bridge,
-    unregister_bridge,
-    EVT_THINKING,
-    EVT_DELEGATION_START,
-    EVT_DELEGATION_RESULT,
-    EVT_TOOL_CALL,
-    EVT_TOOL_RESULT,
-    EVT_TEXT_DELTA,
-    EVT_JIT_REQUEST,
-    EVT_DONE,
-    EVT_ERROR,
+from vigilus.db.base import get_db, get_session_factory
+from vigilus.db.models import ChannelChat, Message, MessageRole, Operator, Session
+from vigilus.providers.base import LLMMessage, LLMResponse
+from vigilus.schemas.chat import (
+    MessageCreate,
+    MessageResponse,
+    SessionCreate,
+    SessionResponse,
+    SessionUpdate,
 )
 
 router = APIRouter(tags=["Chat"])
@@ -60,11 +60,12 @@ event_bus = get_event_bus()
 
 # ── WebSocket ──────────────────────────────────────────────
 
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    from vigilus.api.deps import bearer_token
     from vigilus.config import get_settings
     from vigilus.core.auth import decode_token
-    from vigilus.api.deps import bearer_token
 
     # JWT signature + expiry is sufficient here; token_version DB check is skipped
     # intentionally to keep the hot-path lock-free for the event stream.
@@ -88,11 +89,16 @@ async def websocket_endpoint(websocket: WebSocket):
     def _make_handler(event_type: str):
         async def _handler(payload: Any):
             await queue.put({"type": event_type, "payload": payload or {}})
+
         return _handler
 
     ws_events = [
-        "action.created", "action.updated", "action.completed",
-        "jit.requested", "jit.resolved", "operator.stream",
+        "action.created",
+        "action.updated",
+        "action.completed",
+        "jit.requested",
+        "jit.resolved",
+        "operator.stream",
     ]
     for evt in ws_events:
         handler = _make_handler(evt)
@@ -129,6 +135,7 @@ async def stream_session(session_id: str):
         # No active turn — return a done event immediately
         async def _empty():
             yield "event: done\ndata: {}\n\n"
+
         return StreamingResponse(_empty(), media_type="text/event-stream")
 
     return StreamingResponse(
@@ -202,10 +209,12 @@ def _load_db_messages_as_llm(db_messages: list[Message]) -> list[LLMMessage]:
                 operator_name = content.get("operator") or operator_name
                 if "result" in content:
                     result_text = str(content.get("result", content))
-            llm_msgs.append(LLMMessage(
-                role="user",
-                content=_frame_delegation_result(operator_name, result_text),
-            ))
+            llm_msgs.append(
+                LLMMessage(
+                    role="user",
+                    content=_frame_delegation_result(operator_name, result_text),
+                )
+            )
     return llm_msgs
 
 
@@ -228,13 +237,17 @@ async def _detect_mentioned_operators(content: str, db: AsyncSession) -> list[st
     if not content or "@" not in content:
         return []
 
-    from vigilus.db.models import Operator
-
-    operators = (await db.execute(
-        select(Operator).where(
-            Operator.enabled == True, Operator.delegatable == True  # noqa: E712
+    operators = (
+        (
+            await db.execute(
+                select(Operator).where(
+                    Operator.enabled == True, Operator.delegatable == True  # noqa: E712
+                )
+            )
         )
-    )).scalars().all()
+        .scalars()
+        .all()
+    )
 
     lower = content.lower()
     found: list[tuple[int, str]] = []
@@ -302,10 +315,12 @@ async def _run_orchestrator(
         iteration += 1
         if cancel_event is not None and cancel_event.is_set():
             logger.info("orchestrator.cancelled", session_id=session_id)
-            new_messages.append({
-                "role": "assistant",
-                "content": "⏹ Task cancelled — stopped before any further steps were taken.",
-            })
+            new_messages.append(
+                {
+                    "role": "assistant",
+                    "content": "⏹ Task cancelled — stopped before any further steps were taken.",
+                }
+            )
             if bridge:
                 bridge.publish(EVT_ERROR, {"error": "Task cancelled by user."})
             break
@@ -330,19 +345,23 @@ async def _run_orchestrator(
             )
         except TaskCancelled:
             logger.info("orchestrator.cancelled_while_waiting", session_id=session_id)
-            new_messages.append({
-                "role": "assistant",
-                "content": "⏹ Task cancelled — stopped while waiting for the AI provider.",
-            })
+            new_messages.append(
+                {
+                    "role": "assistant",
+                    "content": "⏹ Task cancelled — stopped while waiting for the AI provider.",
+                }
+            )
             if bridge:
                 bridge.publish(EVT_ERROR, {"error": "Task cancelled by user."})
             break
         except Exception as e:
             logger.error("orchestrator.llm_error", error=str(e))
-            new_messages.append({
-                "role": "assistant",
-                "content": f"Error communicating with the AI provider: {e}",
-            })
+            new_messages.append(
+                {
+                    "role": "assistant",
+                    "content": f"Error communicating with the AI provider: {e}",
+                }
+            )
             if bridge:
                 bridge.publish(EVT_ERROR, {"error": str(e)})
             break
@@ -370,11 +389,14 @@ async def _run_orchestrator(
 
         async def _publish_text(text: str) -> None:
             """Surface the orchestrator's user-facing prose (control blocks stripped)."""
-            await event_bus.publish("operator.stream", {
-                "event_type": "operator.stream",
-                "session_id": session_id,
-                "content": text,
-            })
+            await event_bus.publish(
+                "operator.stream",
+                {
+                    "event_type": "operator.stream",
+                    "session_id": session_id,
+                    "content": text,
+                },
+            )
             if bridge:
                 bridge.publish(EVT_TEXT_DELTA, {"text": text})
 
@@ -391,13 +413,22 @@ async def _run_orchestrator(
             factory = get_session_factory()
             async with factory() as research_db:
                 research_results = await run_research(
-                    research_blocks, db=research_db, bridge=bridge, session_id=session_id,
+                    research_blocks,
+                    db=research_db,
+                    bridge=bridge,
+                    session_id=session_id,
                 )
-            new_messages.append({
-                "role": "tool",
-                "content": {"operator": "Vigilus", "result": research_results, "status": "success"},
-                "operator_id": "Vigilus",
-            })
+            new_messages.append(
+                {
+                    "role": "tool",
+                    "content": {
+                        "operator": "Vigilus",
+                        "result": research_results,
+                        "status": "success",
+                    },
+                    "operator_id": "Vigilus",
+                }
+            )
             history.append(LLMMessage(role="assistant", content=response_text))
             history.append(LLMMessage(role="user", content=research_results))
             continue
@@ -417,14 +448,16 @@ async def _run_orchestrator(
                 if not empty_retry_used:
                     empty_retry_used = True
                     logger.warning("orchestrator.empty_response", iteration=iteration)
-                    history.append(LLMMessage(
-                        role="user",
-                        content=(
-                            "[SYSTEM] Your previous reply was empty. Reply now with "
-                            "your final answer for the user as plain text — summarize "
-                            "what was done and the results. Do not delegate again."
-                        ),
-                    ))
+                    history.append(
+                        LLMMessage(
+                            role="user",
+                            content=(
+                                "[SYSTEM] Your previous reply was empty. Reply now with "
+                                "your final answer for the user as plain text — summarize "
+                                "what was done and the results. Do not delegate again."
+                            ),
+                        )
+                    )
                     continue
                 # Still empty after a retry — surface the last operator report
                 # rather than persisting a blank message.
@@ -451,100 +484,128 @@ async def _run_orchestrator(
         logger.info("orchestrator.delegating", to=operator_name, task=task_desc[:80])
 
         if bridge:
-            bridge.publish(EVT_DELEGATION_START, {
-                "operator": operator_name,
-                "task": task_desc,
-            })
+            bridge.publish(
+                EVT_DELEGATION_START,
+                {
+                    "operator": operator_name,
+                    "task": task_desc,
+                },
+            )
 
         # Reflect the current step in the live task registry (for the tasks view)
         if session_id:
             get_task_registry().update(
-                session_id, step=f"Delegating to {operator_name}", operator=operator_name,
+                session_id,
+                step=f"Delegating to {operator_name}",
+                operator=operator_name,
             )
 
         # Save the assistant message that contains the delegation request. The
         # stored text is the user-facing plan (JSON stripped); the parsed
         # delegation rides alongside it for history reconstruction.
-        new_messages.append({
-            "role": "assistant",
-            "content": {"text": visible_text, "delegation": delegation},
-        })
+        new_messages.append(
+            {
+                "role": "assistant",
+                "content": {"text": visible_text, "delegation": delegation},
+            }
+        )
 
         # Execute the delegation
-        await event_bus.publish("action.created", {
-            "event_type": "action.created",
-            "action": "delegation_start",
-            "operator": operator_name,
-            "session_id": session_id,
-        })
+        await event_bus.publish(
+            "action.created",
+            {
+                "event_type": "action.created",
+                "action": "delegation_start",
+                "operator": operator_name,
+                "session_id": session_id,
+            },
+        )
 
         # Get a fresh DB session for delegation (it may run its own queries)
         factory = get_session_factory()
         try:
             async with factory() as del_db:
                 delegation_result = await execute_delegation(
-                    delegation, db=del_db, session_id=session_id,
-                    bridge=bridge, cancel_event=cancel_event, unattended=unattended,
+                    delegation,
+                    db=del_db,
+                    session_id=session_id,
+                    bridge=bridge,
+                    cancel_event=cancel_event,
+                    unattended=unattended,
                 )
         except TaskCancelled:
             logger.info("orchestrator.cancelled_while_delegating", session_id=session_id)
-            new_messages.append({
-                "role": "assistant",
-                "content": "⏹ Task cancelled — stopped while waiting for the AI provider.",
-            })
+            new_messages.append(
+                {
+                    "role": "assistant",
+                    "content": "⏹ Task cancelled — stopped while waiting for the AI provider.",
+                }
+            )
             if bridge:
                 bridge.publish(EVT_ERROR, {"error": "Task cancelled by user."})
             break
 
         if cancel_event is not None and cancel_event.is_set():
             logger.info("orchestrator.cancelled_after_delegation", session_id=session_id)
-            new_messages.append({
-                "role": "assistant",
-                "content": "⏹ Task cancelled — stopped before any further steps were taken.",
-            })
+            new_messages.append(
+                {
+                    "role": "assistant",
+                    "content": "⏹ Task cancelled — stopped before any further steps were taken.",
+                }
+            )
             if bridge:
                 bridge.publish(EVT_ERROR, {"error": "Task cancelled by user."})
             break
 
-        await event_bus.publish("action.completed", {
-            "event_type": "action.completed",
-            "action": "delegation_complete",
-            "operator": operator_name,
-            "status": delegation_result.get("status"),
-            "session_id": session_id,
-        })
+        await event_bus.publish(
+            "action.completed",
+            {
+                "event_type": "action.completed",
+                "action": "delegation_complete",
+                "operator": operator_name,
+                "status": delegation_result.get("status"),
+                "session_id": session_id,
+            },
+        )
 
         # Format delegation result for the orchestrator
         result_summary = _format_delegation_result(delegation_result)
         last_result_summary = result_summary
 
         if bridge:
-            bridge.publish(EVT_DELEGATION_RESULT, {
-                "operator": operator_name,
-                "status": delegation_result.get("status"),
-                "summary": result_summary[:500],
-            })
+            bridge.publish(
+                EVT_DELEGATION_RESULT,
+                {
+                    "operator": operator_name,
+                    "status": delegation_result.get("status"),
+                    "summary": result_summary[:500],
+                },
+            )
 
         # Save the delegation result as a "tool" message for history
-        new_messages.append({
-            "role": "tool",
-            "content": {
-                "operator": operator_name,
-                "result": result_summary,
-                "status": delegation_result.get("status"),
-            },
-            "operator_id": operator_name,  # Track which operator produced this
-        })
+        new_messages.append(
+            {
+                "role": "tool",
+                "content": {
+                    "operator": operator_name,
+                    "result": result_summary,
+                    "status": delegation_result.get("status"),
+                },
+                "operator_id": operator_name,  # Track which operator produced this
+            }
+        )
 
         # Feed result back to history for next LLM call. The result goes in
         # as a framed user message — not role="tool" — because no native
         # tool_call preceded it and strict providers 400 on orphan tool
         # messages (missing tool_call_id).
         history.append(LLMMessage(role="assistant", content=response_text))
-        history.append(LLMMessage(
-            role="user",
-            content=_frame_delegation_result(operator_name, result_summary),
-        ))
+        history.append(
+            LLMMessage(
+                role="user",
+                content=_frame_delegation_result(operator_name, result_summary),
+            )
+        )
 
         delegations_used += 1
         if delegations_used > max_delegations:
@@ -649,7 +710,9 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
 
     # ── Build system prompt (three-tier) ──────────────────
     prompt_builder = PromptBuilder(
-        db=db, custom_identity=orch_cfg.custom_identity, soul=orch_cfg.soul,
+        db=db,
+        custom_identity=orch_cfg.custom_identity,
+        soul=orch_cfg.soul,
     )
     system_prompt_obj = await prompt_builder.build(session_id=session.id)
     system_prompt = system_prompt_obj.render()
@@ -693,7 +756,8 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
     system_tokens = len(system_prompt) // 4  # rough char→token estimate
     compressor = ContextCompressor(provider=provider, model=model)
     llm_history, compression_summary = await compressor.compress_if_needed(
-        llm_history, system_tokens=system_tokens,
+        llm_history,
+        system_tokens=system_tokens,
     )
     if compression_summary:
         logger.info("chat.compressed", session_id=session.id)
@@ -709,13 +773,18 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
 
     # Buffer activity-feed events on the task so a client that navigates away
     # and returns can restore what the turn has been doing.
-    _ACTIVITY_EVENTS = {
-        EVT_THINKING, EVT_DELEGATION_START, EVT_TOOL_CALL, EVT_TOOL_RESULT,
-        EVT_DELEGATION_RESULT, EVT_TEXT_DELTA, EVT_ERROR,
+    activity_events = {
+        EVT_THINKING,
+        EVT_DELEGATION_START,
+        EVT_TOOL_CALL,
+        EVT_TOOL_RESULT,
+        EVT_DELEGATION_RESULT,
+        EVT_TEXT_DELTA,
+        EVT_ERROR,
     }
 
     def _record_activity(event: str, data: dict) -> None:
-        if event in _ACTIVITY_EVENTS:
+        if event in activity_events:
             get_task_registry().record(session.id, event, data)
 
     # ── Create SSE bridge for streaming ───────────────────
@@ -760,10 +829,13 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
         if last_assistant:
             await db.refresh(last_assistant)
 
-        bridge.publish(EVT_DONE, {
-            "session_id": session.id,
-            "message_id": last_assistant.id if last_assistant else None,
-        })
+        bridge.publish(
+            EVT_DONE,
+            {
+                "session_id": session.id,
+                "message_id": last_assistant.id if last_assistant else None,
+            },
+        )
     except Exception as e:
         logger.exception("orchestrator.run_failed", error=str(e), session_id=session.id)
         bridge.publish(EVT_ERROR, {"error": str(e)})

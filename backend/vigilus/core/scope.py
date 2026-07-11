@@ -45,7 +45,7 @@ _INSECURE_SERVICES = {
     "rsh": FindingSeverity.high,
     "rlogin": FindingSeverity.high,
     "rexec": FindingSeverity.high,
-    "ms-wbt-server": FindingSeverity.medium,   # RDP exposed
+    "ms-wbt-server": FindingSeverity.medium,  # RDP exposed
     "netbios-ssn": FindingSeverity.medium,
     "smb": FindingSeverity.medium,
     "redis": FindingSeverity.high,
@@ -232,8 +232,10 @@ async def list_hosts() -> dict[str, Any]:
     async with factory() as db:
         servers = (await db.execute(select(Server))).scalars().all()
         dh = (
-            await db.execute(select(DiscoveredHost).order_by(DiscoveredHost.last_seen.desc()))
-        ).scalars().all()
+            (await db.execute(select(DiscoveredHost).order_by(DiscoveredHost.last_seen.desc())))
+            .scalars()
+            .all()
+        )
 
     seen_ips: set[str] = set()
     discovered = []
@@ -356,11 +358,7 @@ def _parse_nmap_xml(xml: str) -> list[dict]:
             None,
         )
         mac_el = next((a for a in h.findall("address") if a.get("addrtype") == "mac"), None)
-        hostnames = [
-            hn.get("name")
-            for hn in h.findall("hostnames/hostname")
-            if hn.get("name")
-        ]
+        hostnames = [hn.get("name") for hn in h.findall("hostnames/hostname") if hn.get("name")]
         os_el = h.find("os/osmatch")
         ports = []
         for p in h.findall("ports/port"):

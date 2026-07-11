@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,9 +53,15 @@ async def system_status(db: AsyncSession = Depends(get_db)) -> dict:
     # Count MCP servers
     mcp_running = 0
     try:
+        from sqlalchemy import func, select
+
         from vigilus.db.models import McpServer, McpServerStatus
-        from sqlalchemy import select, func
-        res = await db.execute(select(func.count()).select_from(McpServer).where(McpServer.status == McpServerStatus.running))
+
+        res = await db.execute(
+            select(func.count())
+            .select_from(McpServer)
+            .where(McpServer.status == McpServerStatus.running)
+        )
         mcp_running = res.scalar() or 0
     except Exception:
         pass
@@ -65,36 +73,44 @@ async def system_status(db: AsyncSession = Depends(get_db)) -> dict:
         "trust_mode": settings.default_trust_mode,
     }
 
+
 @router.get("/system/metrics")
 async def system_metrics(db: AsyncSession = Depends(get_db)) -> dict:
-    from vigilus.db.models import Operator, JitRequest, Action, ActionOutcome
-    from sqlalchemy import select, func
-    from datetime import datetime, timedelta, timezone
-    
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import func, select
+
+    from vigilus.db.models import Action, ActionOutcome, JitRequest, Operator
+
     # Active operators
-    res = await db.execute(select(func.count()).select_from(Operator).where(Operator.enabled == True))
-    active_operators = res.scalar() or 0
-    
-    # Pending JITs
-    res = await db.execute(select(func.count()).select_from(JitRequest).where(JitRequest.status == "pending"))
-    pending_jits = res.scalar() or 0
-    
-    # Failed Actions (last 24h)
-    yesterday = datetime.now(timezone.utc) - timedelta(days=1)
     res = await db.execute(
-        select(func.count()).select_from(Action)
+        select(func.count()).select_from(Operator).where(Operator.enabled.is_(True))
+    )
+    active_operators = res.scalar() or 0
+
+    # Pending JITs
+    res = await db.execute(
+        select(func.count()).select_from(JitRequest).where(JitRequest.status == "pending")
+    )
+    pending_jits = res.scalar() or 0
+
+    # Failed Actions (last 24h)
+    yesterday = datetime.now(UTC) - timedelta(days=1)
+    res = await db.execute(
+        select(func.count())
+        .select_from(Action)
         .where((Action.outcome == ActionOutcome.error) | (Action.outcome == ActionOutcome.denied))
         .where(Action.created_at >= yesterday)
     )
     failed_actions = res.scalar() or 0
-    
+
     # Total Actions
     res = await db.execute(select(func.count()).select_from(Action))
     total_actions = res.scalar() or 0
-    
+
     return {
         "active_operators": active_operators,
         "pending_jits": pending_jits,
         "failed_actions_24h": failed_actions,
-        "total_actions": total_actions
+        "total_actions": total_actions,
     }

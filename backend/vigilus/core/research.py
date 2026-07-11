@@ -30,8 +30,7 @@ logger = structlog.get_logger(__name__)
 
 # Fenced or inline {"search": …} / {"fetch": …} blocks, mirroring delegation.
 _RESEARCH_RE = re.compile(
-    r'```json\s*(\{[^`]*"(?:search|fetch)"[^`]*\})\s*```'
-    r'|(\{"(?:search|fetch)"[^}]*\})',
+    r'```json\s*(\{[^`]*"(?:search|fetch)"[^`]*\})\s*```' r'|(\{"(?:search|fetch)"[^}]*\})',
     re.DOTALL,
 )
 

@@ -162,11 +162,13 @@ async def fs_list(arguments: dict[str, Any], operator: Any = None, **kwargs) -> 
                 for f in files:
                     full = os.path.join(root, f)
                     stat = os.stat(full)
-                    entries.append({
-                        "name": os.path.join(rel, f) if rel != "." else f,
-                        "type": "file",
-                        "size": stat.st_size,
-                    })
+                    entries.append(
+                        {
+                            "name": os.path.join(rel, f) if rel != "." else f,
+                            "type": "file",
+                            "size": stat.st_size,
+                        }
+                    )
             return {"entries": entries, "count": len(entries)}
         else:
             raw = os.listdir(path)

@@ -13,17 +13,17 @@ label/color overrides for subnet (VLAN-proxy) groupings, which are otherwise
 computed at request time from ``Scan.target``. Guarded/idempotent like the other
 migrations.
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = 'f8a5c36d0b23'
-down_revision: Union[str, None] = 'e7f4d35b9a12'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "f8a5c36d0b23"
+down_revision: str | None = "e7f4d35b9a12"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def _has_table(bind, name: str) -> bool:

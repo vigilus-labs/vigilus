@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Column,
     DateTime,
@@ -14,7 +15,6 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
-    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -23,10 +23,10 @@ from sqlalchemy.orm import relationship
 
 from vigilus.db.base import Base
 
-
 # ────────────────────────────────────────────────────────────
 # Enum types
 # ────────────────────────────────────────────────────────────
+
 
 class ProviderType(str, enum.Enum):
     anthropic = "anthropic"
@@ -117,6 +117,7 @@ class JitStatus(str, enum.Enum):
 
 class ScopeSource(str, enum.Enum):
     """Where a Scope observation (scan / finding) came from."""
+
     nmap = "nmap"
     wazuh = "wazuh"
     manual = "manual"
@@ -126,7 +127,7 @@ class ScopeSource(str, enum.Enum):
 class FindingKind(str, enum.Enum):
     alert = "alert"
     vulnerability = "vulnerability"
-    fim = "fim"            # file integrity monitoring
+    fim = "fim"  # file integrity monitoring
     exposure = "exposure"  # e.g. telnet open, risky service
 
 
@@ -142,17 +143,19 @@ class FindingSeverity(str, enum.Enum):
 # Helpers
 # ────────────────────────────────────────────────────────────
 
+
 def _uuid() -> str:
     return str(uuid4())
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # ────────────────────────────────────────────────────────────
 # Models
 # ────────────────────────────────────────────────────────────
+
 
 class Provider(Base):
     __tablename__ = "providers"
@@ -196,7 +199,9 @@ class Operator(Base):
 
     # relationships
     provider = relationship("Provider", back_populates="operators")
-    operator_tools = relationship("OperatorTool", back_populates="operator", cascade="all, delete-orphan")
+    operator_tools = relationship(
+        "OperatorTool", back_populates="operator", cascade="all, delete-orphan"
+    )
     messages = relationship("Message", back_populates="operator")
     actions = relationship("Action", back_populates="operator")
     jit_requests = relationship("JitRequest", back_populates="operator")
@@ -210,8 +215,12 @@ class Tool(Base):
     name = Column(String(255), unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
     input_schema = Column(JSON, nullable=True, default=dict)
-    implementation_type = Column(Enum(ToolImplementationType), nullable=False, default=ToolImplementationType.native)
-    required_permission = Column(Enum(PermissionLevel), nullable=False, default=PermissionLevel.read)
+    implementation_type = Column(
+        Enum(ToolImplementationType), nullable=False, default=ToolImplementationType.native
+    )
+    required_permission = Column(
+        Enum(PermissionLevel), nullable=False, default=PermissionLevel.read
+    )
     native_handler = Column(String(255), nullable=True)
     http_config = Column(JSON, nullable=True)
     mcp_server_id = Column(String(36), ForeignKey("mcp_servers.id"), nullable=True)
@@ -221,7 +230,9 @@ class Tool(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     # relationships
-    operator_tools = relationship("OperatorTool", back_populates="tool", cascade="all, delete-orphan")
+    operator_tools = relationship(
+        "OperatorTool", back_populates="tool", cascade="all, delete-orphan"
+    )
     mcp_server = relationship("McpServer", back_populates="tools")
     actions = relationship("Action", back_populates="tool")
 
@@ -229,7 +240,9 @@ class Tool(Base):
 class OperatorTool(Base):
     __tablename__ = "operator_tools"
 
-    operator_id = Column(String(36), ForeignKey("operators.id", ondelete="CASCADE"), primary_key=True)
+    operator_id = Column(
+        String(36), ForeignKey("operators.id", ondelete="CASCADE"), primary_key=True
+    )
     tool_id = Column(String(36), ForeignKey("tools.id", ondelete="CASCADE"), primary_key=True)
     assigned_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
@@ -268,8 +281,10 @@ class Server(Base):
     name = Column(String(255), unique=True, nullable=False, index=True)
     hostname = Column(String(1024), nullable=False)
     port = Column(Integer, default=22, nullable=False)
-    os = Column(String(255), nullable=True)          # OS type/name, e.g. "Ubuntu", "Debian"
-    os_version = Column(String(255), nullable=True)  # OS version, e.g. "22.04"; auto-filled from scans
+    os = Column(String(255), nullable=True)  # OS type/name, e.g. "Ubuntu", "Debian"
+    os_version = Column(
+        String(255), nullable=True
+    )  # OS version, e.g. "22.04"; auto-filled from scans
     tags = Column(JSON, nullable=True, default=list)
     credential_id = Column(String(36), ForeignKey("credentials.id"), nullable=True)
     notes = Column(Text, nullable=True)
@@ -312,10 +327,17 @@ class Session(Base):
     operator_id = Column(String(36), ForeignKey("operators.id"), nullable=True)
     origin = Column(String(32), nullable=True)  # web | telegram | discord | schedule
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
-    last_active_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
+    last_active_at = Column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
 
     # relationships
-    messages = relationship("Message", back_populates="session", cascade="all, delete-orphan", order_by="Message.created_at")
+    messages = relationship(
+        "Message",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="Message.created_at",
+    )
     actions = relationship("Action", back_populates="session")
     operator = relationship("Operator", back_populates="sessions")
 
@@ -324,7 +346,9 @@ class Message(Base):
     __tablename__ = "messages"
 
     id = Column(String(36), primary_key=True, default=_uuid)
-    session_id = Column(String(36), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id = Column(
+        String(36), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     role = Column(Enum(MessageRole), nullable=False)
     content = Column(JSON, nullable=False)
     operator_id = Column(String(36), ForeignKey("operators.id"), nullable=True)
@@ -368,14 +392,16 @@ class ScheduledTask(Base):
     name = Column(String(255), unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
     cron_expression = Column(String(128), nullable=False)  # standard 5-field cron
-    task_prompt = Column(Text, nullable=False)             # message sent to the orchestrator
-    operator_id = Column(String(36), ForeignKey("operators.id"), nullable=True)  # optional: delegate hint
+    task_prompt = Column(Text, nullable=False)  # message sent to the orchestrator
+    operator_id = Column(
+        String(36), ForeignKey("operators.id"), nullable=True
+    )  # optional: delegate hint
     enabled = Column(Boolean, default=True, nullable=False)
     last_run_at = Column(DateTime(timezone=True), nullable=True)
     next_run_at = Column(DateTime(timezone=True), nullable=True)
-    last_status = Column(String(32), nullable=True)        # success | error | running
-    last_result = Column(JSON, nullable=True)              # {summary, session_id, error}
-    deliver_to = Column(JSON, nullable=True)               # {"platform","chat_id"} channel delivery
+    last_status = Column(String(32), nullable=True)  # success | error | running
+    last_result = Column(JSON, nullable=True)  # {summary, session_id, error}
+    deliver_to = Column(JSON, nullable=True)  # {"platform","chat_id"} channel delivery
     run_count = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
@@ -398,7 +424,7 @@ class Memory(Base):
     scope = Column(String(64), nullable=False, index=True, default="global")
     content = Column(Text, nullable=False)
     category = Column(String(64), nullable=True)  # e.g. server, service, preference
-    source = Column(String(255), nullable=True)   # who saved it (operator name / "vigilus" / "user")
+    source = Column(String(255), nullable=True)  # who saved it (operator name / "vigilus" / "user")
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
 
@@ -445,8 +471,8 @@ class ChannelConfig(Base):
     __tablename__ = "channel_configs"
 
     id = Column(String(36), primary_key=True, default=_uuid)
-    platform = Column(String(32), nullable=False, index=True)   # telegram | discord
-    bot_token_enc = Column(Text, nullable=False)                # Fernet-encrypted
+    platform = Column(String(32), nullable=False, index=True)  # telegram | discord
+    bot_token_enc = Column(Text, nullable=False)  # Fernet-encrypted
     bot_username = Column(String(255), nullable=True)
     enabled = Column(Boolean, default=True, nullable=False)
     respond_in_groups = Column(Boolean, default=False, nullable=False)
@@ -468,9 +494,7 @@ class ChannelAccount(Base):
     allowed = Column(Boolean, default=False, nullable=False)
     label = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
-    __table_args__ = (
-        UniqueConstraint("platform", "external_user_id", name="uq_channel_account"),
-    )
+    __table_args__ = (UniqueConstraint("platform", "external_user_id", name="uq_channel_account"),)
 
 
 class ChannelChat(Base):
@@ -482,11 +506,11 @@ class ChannelChat(Base):
     platform = Column(String(32), nullable=False, index=True)
     external_chat_id = Column(String(64), nullable=False)
     session_id = Column(String(36), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
-    last_active_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
-    __table_args__ = (
-        UniqueConstraint("platform", "external_chat_id", name="uq_channel_chat"),
+    last_active_at = Column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint("platform", "external_chat_id", name="uq_channel_chat"),)
 
 
 class SearchConfig(Base):
@@ -499,10 +523,10 @@ class SearchConfig(Base):
     __tablename__ = "search_configs"
 
     id = Column(String(36), primary_key=True, default=_uuid)
-    search_backend = Column(String(32), nullable=False, default="searxng")   # searxng|firecrawl
-    fetch_backend = Column(String(32), nullable=False, default="builtin")    # builtin|firecrawl
+    search_backend = Column(String(32), nullable=False, default="searxng")  # searxng|firecrawl
+    fetch_backend = Column(String(32), nullable=False, default="builtin")  # builtin|firecrawl
     searxng_url = Column(String(1024), nullable=True)
-    firecrawl_api_key_enc = Column(Text, nullable=True)                      # Fernet-encrypted
+    firecrawl_api_key_enc = Column(Text, nullable=True)  # Fernet-encrypted
     enabled = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
@@ -512,6 +536,7 @@ class SearchConfig(Base):
 # Scope — network attack-surface data (scans, discovered hosts, findings)
 # ────────────────────────────────────────────────────────────
 
+
 class Scan(Base):
     """One scan run (nmap or otherwise). Output is parsed into
     DiscoveredHost/DiscoveredService rows."""
@@ -520,13 +545,13 @@ class Scan(Base):
 
     id = Column(String(36), primary_key=True, default=_uuid)
     source = Column(Enum(ScopeSource), nullable=False, default=ScopeSource.nmap)
-    target = Column(String(512), nullable=True)            # CIDR / host / range scanned
+    target = Column(String(512), nullable=True)  # CIDR / host / range scanned
     status = Column(String(32), nullable=False, default="completed")  # running|completed|error
     host_count = Column(Integer, default=0, nullable=False)
     started_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     finished_at = Column(DateTime(timezone=True), nullable=True)
     operator_id = Column(String(36), ForeignKey("operators.id"), nullable=True)
-    raw = Column(Text, nullable=True)                       # raw nmap XML (for re-parse/debug)
+    raw = Column(Text, nullable=True)  # raw nmap XML (for re-parse/debug)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     hosts = relationship("DiscoveredHost", back_populates="scan", cascade="all, delete-orphan")
@@ -543,13 +568,17 @@ class DiscoveredHost(Base):
     mac = Column(String(64), nullable=True)
     hostname = Column(String(512), nullable=True)
     os_guess = Column(String(255), nullable=True)
-    status = Column(String(32), nullable=False, default="up")   # up|down
-    matched_server_id = Column(String(36), ForeignKey("servers.id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(String(32), nullable=False, default="up")  # up|down
+    matched_server_id = Column(
+        String(36), ForeignKey("servers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     first_seen = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     last_seen = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
 
     scan = relationship("Scan", back_populates="hosts")
-    services = relationship("DiscoveredService", back_populates="host", cascade="all, delete-orphan")
+    services = relationship(
+        "DiscoveredService", back_populates="host", cascade="all, delete-orphan"
+    )
     matched_server = relationship("Server", foreign_keys=[matched_server_id])
     __table_args__ = (UniqueConstraint("scan_id", "ip", name="uq_discovered_host_scan_ip"),)
 
@@ -560,17 +589,21 @@ class DiscoveredService(Base):
     __tablename__ = "discovered_services"
 
     id = Column(String(36), primary_key=True, default=_uuid)
-    discovered_host_id = Column(String(36), ForeignKey("discovered_hosts.id", ondelete="CASCADE"), nullable=False)
+    discovered_host_id = Column(
+        String(36), ForeignKey("discovered_hosts.id", ondelete="CASCADE"), nullable=False
+    )
     port = Column(Integer, nullable=False)
     proto = Column(String(16), nullable=False, default="tcp")
     state = Column(String(32), nullable=False, default="open")  # open|filtered|closed
-    service = Column(String(64), nullable=True)                 # http, ssh, ...
-    product = Column(String(255), nullable=True)                # Apache, OpenSSH, ...
+    service = Column(String(64), nullable=True)  # http, ssh, ...
+    product = Column(String(255), nullable=True)  # Apache, OpenSSH, ...
     version = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     host = relationship("DiscoveredHost", back_populates="services")
-    __table_args__ = (UniqueConstraint("discovered_host_id", "port", "proto", name="uq_disc_service_port"),)
+    __table_args__ = (
+        UniqueConstraint("discovered_host_id", "port", "proto", name="uq_disc_service_port"),
+    )
 
 
 class Finding(Base):
@@ -587,11 +620,17 @@ class Finding(Base):
     kind = Column(Enum(FindingKind), nullable=False)
     severity = Column(Enum(FindingSeverity), nullable=False, default=FindingSeverity.info)
     title = Column(String(512), nullable=False)
-    detail = Column(JSON, nullable=True)                 # source-specific payload (CVE, rule, etc.)
-    server_id = Column(String(36), ForeignKey("servers.id", ondelete="CASCADE"), nullable=True, index=True)
-    discovered_host_id = Column(String(36), ForeignKey("discovered_hosts.id", ondelete="CASCADE"), nullable=True, index=True)
+    detail = Column(JSON, nullable=True)  # source-specific payload (CVE, rule, etc.)
+    server_id = Column(
+        String(36), ForeignKey("servers.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    discovered_host_id = Column(
+        String(36), ForeignKey("discovered_hosts.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     host_identifier = Column(String(255), nullable=True)  # IP/hostname when neither FK applies
-    fingerprint = Column(String(255), nullable=True, index=True)  # dedupe key (source+kind+title+host)
+    fingerprint = Column(
+        String(255), nullable=True, index=True
+    )  # dedupe key (source+kind+title+host)
     count = Column(Integer, default=1, nullable=False)
     first_seen = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     last_seen = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
@@ -618,7 +657,7 @@ class NetworkRole(Base):
     is_dns = Column(Boolean, default=False, nullable=False)
     is_switch = Column(Boolean, default=False, nullable=False)
     is_access_point = Column(Boolean, default=False, nullable=False)
-    label = Column(String(255), nullable=True)   # display override, e.g. "Core Router"
+    label = Column(String(255), nullable=True)  # display override, e.g. "Core Router"
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
@@ -635,7 +674,7 @@ class NetworkSegment(Base):
 
     id = Column(String(36), primary_key=True, default=_uuid)
     cidr = Column(String(64), nullable=False, unique=True, index=True)
-    label = Column(String(255), nullable=True)   # e.g. "VLAN 10 — IoT"
-    color = Column(String(32), nullable=True)     # hex, e.g. "#7c3aed"
+    label = Column(String(255), nullable=True)  # e.g. "VLAN 10 — IoT"
+    color = Column(String(32), nullable=True)  # hex, e.g. "#7c3aed"
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)

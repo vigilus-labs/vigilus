@@ -52,6 +52,7 @@ _PERMISSION_ORDER: dict[Permission, int] = {
     Permission.elevate: 3,
 }
 
+
 @dataclass
 class JITToken:
     """A time-limited Just-In-Time elevation token."""
@@ -74,12 +75,21 @@ class JITToken:
             return False
         return datetime.now(UTC) < self.expires_at
 
+
 class WardenService:
     def __init__(self):
         self.settings = get_settings()
         self.secret_key = self.settings.secret_key.encode("utf-8")
 
-    async def request_jit(self, db, operator: Operator, resource: str, permission: Permission, task_description: str, ttl_minutes: int | None = None):
+    async def request_jit(
+        self,
+        db,
+        operator: Operator,
+        resource: str,
+        permission: Permission,
+        task_description: str,
+        ttl_minutes: int | None = None,
+    ):
         from vigilus.core.events import get_event_bus
         from vigilus.db.models import JitRequest, JitStatus, TrustMode
 
@@ -97,10 +107,10 @@ class WardenService:
         req = JitRequest(
             operator_id=operator.id,
             resource=resource,
-            permission=permission.name, # Use string enum
+            permission=permission.name,  # Use string enum
             task_description=task_description,
             ttl_minutes=ttl_minutes,
-            status=status
+            status=status,
         )
         db.add(req)
         await db.commit()
@@ -123,8 +133,8 @@ class WardenService:
                 "resource": resource,
                 "permission": permission.value,
                 "status": req.status.value,
-                "task_description": task_description
-            }
+                "task_description": task_description,
+            },
         )
         return req, token
 
@@ -150,6 +160,7 @@ class WardenService:
         """
         from vigilus.core.events import get_event_bus
         from vigilus.db.models import JitRequest, JitStatus
+
         req = await db.get(JitRequest, request_id)
         if not req or req.status != JitStatus.pending:
             raise ValueError("Invalid request")
@@ -171,16 +182,16 @@ class WardenService:
         req.approved_by = approver
         await db.commit()
 
-        await get_event_bus().publish("jit.resolved", {
-            "id": req.id,
-            "operator_id": req.operator_id,
-            "status": req.status.value
-        })
+        await get_event_bus().publish(
+            "jit.resolved",
+            {"id": req.id, "operator_id": req.operator_id, "status": req.status.value},
+        )
         return token
 
     async def deny_request(self, db, request_id: str, approver: str = "admin"):
         from vigilus.core.events import get_event_bus
         from vigilus.db.models import JitRequest, JitStatus
+
         req = await db.get(JitRequest, request_id)
         if not req or req.status != JitStatus.pending:
             raise ValueError("Invalid request")
@@ -190,20 +201,21 @@ class WardenService:
         req.approved_by = approver
         await db.commit()
 
-        await get_event_bus().publish("jit.resolved", {
-            "id": req.id,
-            "operator_id": req.operator_id,
-            "status": req.status.value
-        })
+        await get_event_bus().publish(
+            "jit.resolved",
+            {"id": req.id, "operator_id": req.operator_id, "status": req.status.value},
+        )
 
-    def issue_token(self, operator_id: str, resource: str, permission: Permission, ttl_minutes: int = 15) -> str:
+    def issue_token(
+        self, operator_id: str, resource: str, permission: Permission, ttl_minutes: int = 15
+    ) -> str:
         granted_at = datetime.now(UTC)
         payload = {
             "operator_id": operator_id,
             "resource": resource,
             "permission": permission.value,
             "granted_at": granted_at.isoformat(),
-            "ttl_minutes": ttl_minutes
+            "ttl_minutes": ttl_minutes,
         }
         payload_bytes = json.dumps(payload).encode("utf-8")
         payload_b64 = base64.urlsafe_b64encode(payload_bytes).decode("utf-8").rstrip("=")
@@ -228,7 +240,9 @@ class WardenService:
             return None
 
         expected_signature = hmac.new(self.secret_key, payload_bytes, hashlib.sha256).digest()
-        expected_signature_b64 = base64.urlsafe_b64encode(expected_signature).decode("utf-8").rstrip("=")
+        expected_signature_b64 = (
+            base64.urlsafe_b64encode(expected_signature).decode("utf-8").rstrip("=")
+        )
 
         if not hmac.compare_digest(signature_b64, expected_signature_b64):
             return None
@@ -243,11 +257,12 @@ class WardenService:
                 permission=Permission(payload["permission"]),
                 granted_at=granted_at,
                 ttl_minutes=payload["ttl_minutes"],
-                revoked=False
+                revoked=False,
             )
             return jit if jit.is_valid else None
         except Exception:
             return None
+
 
 def _resource_covers(token_resource: str, requested: str) -> bool:
     """True if a JIT token's resource scope covers the requested resource.
@@ -312,13 +327,23 @@ class PolicyEngine:
         # If accessing host file system, check working_dir boundary.
         # Only meaningful for absolute paths — relative paths and pseudo
         # resources ("*") are resolved/confined by the tool handlers.
-        if has_base_perm and resource_path and operator.working_dir and os.path.isabs(resource_path):
+        if (
+            has_base_perm
+            and resource_path
+            and operator.working_dir
+            and os.path.isabs(resource_path)
+        ):
             try:
                 abs_resource = os.path.realpath(resource_path)
                 abs_working_dir = os.path.realpath(operator.working_dir)
                 # commonpath (not startswith) so /data does not authorize /data-evil
                 if os.path.commonpath([abs_working_dir, abs_resource]) != abs_working_dir:
-                    logger.info("rbac.deny_outside_working_dir", operator_id=operator.id, resource=resource_path, working_dir=operator.working_dir)
+                    logger.info(
+                        "rbac.deny_outside_working_dir",
+                        operator_id=operator.id,
+                        resource=resource_path,
+                        working_dir=operator.working_dir,
+                    )
                     return False
             except Exception:
                 return False
@@ -326,5 +351,10 @@ class PolicyEngine:
         if has_base_perm:
             return True
 
-        logger.info("rbac.deny_insufficient_permission", operator_id=operator.id, req=required_permission, has=operator.permission_level.value)
+        logger.info(
+            "rbac.deny_insufficient_permission",
+            operator_id=operator.id,
+            req=required_permission,
+            has=operator.permission_level.value,
+        )
         return False

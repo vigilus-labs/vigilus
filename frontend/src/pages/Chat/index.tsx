@@ -755,7 +755,9 @@ export default function Chat() {
         if (parsed.operator && parsed.result) {
           return `[${parsed.operator}] ${parsed.result}`;
         }
-      } catch {}
+      } catch {
+        // not JSON — fall through and render the raw string
+      }
       return content;
     }
     if (content && typeof content === 'object') {

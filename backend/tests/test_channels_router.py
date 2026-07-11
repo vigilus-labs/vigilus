@@ -11,8 +11,8 @@ import pytest
 
 from vigilus.db.base import get_session_factory
 from vigilus.db.models import ChannelAccount, ChannelChat, Session
-from vigilus.integrations.base import InboundMessage
 from vigilus.integrations import router as router_mod
+from vigilus.integrations.base import InboundMessage
 
 
 class FakeAdapter:
@@ -43,20 +43,28 @@ class FakeAdapter:
 async def _seed_account(platform: str, external_user_id: str, *, allowed: bool, label=None):
     factory = get_session_factory()
     async with factory() as db:
-        db.add(ChannelAccount(
-            platform=platform,
-            external_user_id=external_user_id,
-            allowed=allowed,
-            label=label,
-        ))
+        db.add(
+            ChannelAccount(
+                platform=platform,
+                external_user_id=external_user_id,
+                allowed=allowed,
+                label=label,
+            )
+        )
         await db.commit()
 
 
-def _inbound(platform="telegram", *, chat_id="c1", user_id="u1", text="hi",
-             is_group=False, mentioned=False):
+def _inbound(
+    platform="telegram", *, chat_id="c1", user_id="u1", text="hi", is_group=False, mentioned=False
+):
     return InboundMessage(
-        platform=platform, chat_id=chat_id, user_id=user_id,
-        user_name="tester", text=text, is_group=is_group, mentioned=mentioned,
+        platform=platform,
+        chat_id=chat_id,
+        user_id=user_id,
+        user_name="tester",
+        text=text,
+        is_group=is_group,
+        mentioned=mentioned,
     )
 
 
@@ -147,12 +155,14 @@ async def test_chat_path_creates_session_and_link(db_session, monkeypatch):
     async with factory() as db:
         from sqlalchemy import select
 
-        link = (await db.execute(
-            select(ChannelChat).where(
-                ChannelChat.platform == "telegram",
-                ChannelChat.external_chat_id == "c1",
+        link = (
+            await db.execute(
+                select(ChannelChat).where(
+                    ChannelChat.platform == "telegram",
+                    ChannelChat.external_chat_id == "c1",
+                )
             )
-        )).scalar_one()
+        ).scalar_one()
         session = await db.get(Session, link.session_id)
         assert session is not None
         assert session.origin == "telegram"

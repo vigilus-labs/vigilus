@@ -1,17 +1,15 @@
 """Tests for the three-tier system prompt builder."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from vigilus.core.prompt_builder import (
+    DEFAULT_DELEGATION_FORMAT,
+    DEFAULT_IDENTITY,
     PromptBuilder,
     SystemPrompt,
-    DEFAULT_IDENTITY,
-    DEFAULT_DELEGATION_FORMAT,
 )
-from vigilus.db.models import Operator, Server, Tool, OperatorTool
+from vigilus.db.models import Operator, Server
 
 
 @pytest.mark.asyncio

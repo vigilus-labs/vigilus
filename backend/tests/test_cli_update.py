@@ -143,21 +143,27 @@ def test_non_git_install_fails_with_guidance(tmp_path, monkeypatch, capsys):
 
 
 def test_restart_plan_system_systemd():
-    exists = lambda p: p == "/etc/systemd/system/vigilus.service"
+    def exists(p):
+        return p == "/etc/systemd/system/vigilus.service"
+
     description, argv, hint = cli._service_restart_plan("linux", exists=exists)
     assert argv == ["systemctl", "restart", "vigilus"]
     assert hint == "sudo systemctl restart vigilus"
 
 
 def test_restart_plan_user_systemd():
-    exists = lambda p: p.endswith(".config/systemd/user/vigilus.service")
+    def exists(p):
+        return p.endswith(".config/systemd/user/vigilus.service")
+
     description, argv, hint = cli._service_restart_plan("linux", exists=exists)
     assert argv == ["systemctl", "--user", "restart", "vigilus"]
     assert hint is None
 
 
 def test_restart_plan_macos_launchd():
-    exists = lambda p: p.endswith("Library/LaunchAgents/dev.vigilus.plist")
+    def exists(p):
+        return p.endswith("Library/LaunchAgents/dev.vigilus.plist")
+
     description, argv, hint = cli._service_restart_plan("darwin", exists=exists)
     assert argv[:3] == ["launchctl", "kickstart", "-k"]
 

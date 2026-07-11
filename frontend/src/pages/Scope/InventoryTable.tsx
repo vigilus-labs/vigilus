@@ -98,7 +98,11 @@ export function InventoryTable({
   function toggle(ip: string) {
     setSelected((prev) => {
       const next = new Set(prev);
-      next.has(ip) ? next.delete(ip) : next.add(ip);
+      if (next.has(ip)) {
+        next.delete(ip);
+      } else {
+        next.add(ip);
+      }
       return next;
     });
   }
