@@ -7,12 +7,14 @@ already exists), and editing the install command must trigger a re-install.
 """
 
 import os
+import shlex
+import sys
 import types
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from unittest.mock import AsyncMock
 
 from vigilus.db.models import McpServer
 from vigilus.mcp_host import manager as manager_mod
@@ -34,7 +36,11 @@ def manager():
     McpManager._instance = None
 
 
-def _conn(server_id: str = "srv1", install_command: str | None = None, working_dir: str | None = None) -> McpConnection:
+def _conn(
+    server_id: str = "srv1",
+    install_command: str | None = None,
+    working_dir: str | None = None,
+) -> McpConnection:
     return McpConnection(
         server_id=server_id,
         command="node",
@@ -44,6 +50,10 @@ def _conn(server_id: str = "srv1", install_command: str | None = None, working_d
         install_command=install_command,
         working_dir=working_dir,
     )
+
+
+def _python_command(script: str) -> str:
+    return f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}"
 
 
 def _seed_repo(data_dir, server_id: str = "srv1"):
@@ -59,7 +69,9 @@ def _seed_repo(data_dir, server_id: str = "srv1"):
 @pytest.mark.asyncio
 async def test_install_runs_and_writes_marker(data_dir):
     repo = _seed_repo(data_dir)
-    cwd = await _conn(install_command="touch installed.txt")._prepare_env()
+    cwd = await _conn(
+        install_command=_python_command("from pathlib import Path; Path('installed.txt').touch()")
+    )._prepare_env()
 
     assert cwd == str(repo)
     assert (repo / "installed.txt").exists()
@@ -69,13 +81,17 @@ async def test_install_runs_and_writes_marker(data_dir):
 @pytest.mark.asyncio
 async def test_failed_install_surfaces_output(data_dir):
     repo = _seed_repo(data_dir)
-    conn = _conn(install_command="echo boom-from-npm >&2; exit 3")
+    conn = _conn(
+        install_command=_python_command(
+            "import sys; print('boom-from-npm', file=sys.stderr); sys.exit(3)"
+        )
+    )
 
     with pytest.raises(RuntimeError) as exc:
         await conn._prepare_env()
 
     assert "boom-from-npm" in str(exc.value)
-    assert "exit 3" in str(exc.value)
+    assert "failed (exit 3)" in str(exc.value)
     assert not (repo / INSTALL_MARKER).exists()
 
 
@@ -83,18 +99,23 @@ async def test_failed_install_surfaces_output(data_dir):
 async def test_failed_install_is_retried_next_start(data_dir):
     repo = _seed_repo(data_dir)
     with pytest.raises(RuntimeError):
-        await _conn(install_command="exit 1")._prepare_env()
+        await _conn(install_command=_python_command("__import__('sys').exit(1)"))._prepare_env()
 
     # Same clone, fixed command: install must run again, not be skipped
     # because the repo dir already exists.
-    await _conn(install_command="touch fixed.txt")._prepare_env()
+    await _conn(
+        install_command=_python_command("from pathlib import Path; Path('fixed.txt').touch()")
+    )._prepare_env()
     assert (repo / "fixed.txt").exists()
 
 
 @pytest.mark.asyncio
 async def test_successful_install_not_rerun(data_dir):
     repo = _seed_repo(data_dir)
-    cmd = "echo run >> count.txt"
+    cmd = _python_command(
+        "from pathlib import Path; p = Path('count.txt'); "
+        "p.write_text(p.read_text() + 'run' if p.exists() else 'run')"
+    )
     await _conn(install_command=cmd)._prepare_env()
     await _conn(install_command=cmd)._prepare_env()
 
@@ -104,8 +125,12 @@ async def test_successful_install_not_rerun(data_dir):
 @pytest.mark.asyncio
 async def test_changed_install_command_reruns(data_dir):
     repo = _seed_repo(data_dir)
-    await _conn(install_command="touch first.txt")._prepare_env()
-    await _conn(install_command="touch second.txt")._prepare_env()
+    await _conn(
+        install_command=_python_command("from pathlib import Path; Path('first.txt').touch()")
+    )._prepare_env()
+    await _conn(
+        install_command=_python_command("from pathlib import Path; Path('second.txt').touch()")
+    )._prepare_env()
 
     assert (repo / "second.txt").exists()
 
@@ -116,7 +141,18 @@ async def test_install_timeout_kills_and_reports(data_dir, monkeypatch):
     monkeypatch.setattr(manager_mod, "INSTALL_TIMEOUT_SECONDS", 0.2)
 
     with pytest.raises(RuntimeError, match="timed out"):
-        await _conn(install_command="sleep 30")._prepare_env()
+        await _conn(install_command=_python_command("import time; time.sleep(30)"))._prepare_env()
+
+
+@pytest.mark.asyncio
+async def test_shell_operators_in_install_command_are_rejected(data_dir):
+    repo = _seed_repo(data_dir)
+
+    with pytest.raises(ValueError, match="must not use shell operators"):
+        await _conn(install_command="touch installed.txt; touch injected.txt")._prepare_env()
+
+    assert not (repo / "installed.txt").exists()
+    assert not (repo / "injected.txt").exists()
 
 
 @pytest.mark.asyncio

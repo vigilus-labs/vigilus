@@ -460,13 +460,16 @@ BUILTIN_TOOLS: list[dict] = [
     },
     {
         "name": "shell_exec",
-        "description": "Execute a shell command on the Vigilus host machine.",
+        "description": "Execute a command on the Vigilus host machine.",
         "required_permission": PermissionLevel.exec,
         "native_handler": "shell_exec",
         "input_schema": {
             "type": "object",
             "properties": {
-                "command": {"type": "string", "description": "Shell command to execute"},
+                "command": {
+                    "type": "string",
+                    "description": "Command line to execute (shell operators are not supported)",
+                },
                 "working_dir": {"type": "string", "description": "Working directory (optional)"},
                 "timeout": {"type": "integer", "default": 30, "description": "Command timeout in seconds"},
             },

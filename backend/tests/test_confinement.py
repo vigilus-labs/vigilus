@@ -95,6 +95,15 @@ class TestHostToolsConfinement:
         assert result.get("exit_code") == 0
         assert os.path.realpath(str(tmp_path)) in result.get("stdout", "")
 
+    @pytest.mark.asyncio
+    async def test_shell_exec_rejects_command_chaining(self, tmp_path):
+        op = _operator(str(tmp_path))
+        marker = tmp_path / "injected.txt"
+        result = await shell_exec({"command": f"echo safe; touch {marker}"}, operator=op)
+
+        assert "must not use shell operators" in result.get("error", "")
+        assert not marker.exists()
+
 
 class TestJitResourceCovers:
     def test_wildcard_covers_everything(self):

@@ -8,6 +8,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from vigilus.core.command import parse_command_argv
 from vigilus.db.models import McpServerStatus, McpTransport
 
 # A github_url is later handed to `git clone`. git treats certain URL forms as
@@ -17,6 +18,17 @@ from vigilus.db.models import McpServerStatus, McpTransport
 # only http(s)/git/ssh transports and the scp-like `user@host:path` form.
 _GIT_SAFE_SCHEME = re.compile(r"^(?:https?|git|ssh)://", re.IGNORECASE)
 _GIT_SCP_LIKE = re.compile(r"^(?:[A-Za-z0-9._~-]+@)?[A-Za-z0-9._-]+:(?!//)")
+
+
+def validate_install_command(command: str | None) -> str | None:
+    """Validate a single executable and argv-style install command."""
+    if command is None:
+        return None
+    command = command.strip()
+    if not command:
+        return None
+    parse_command_argv(command, field_name="install_command")
+    return command
 
 
 def validate_github_url(url: str | None) -> str | None:
@@ -63,6 +75,9 @@ class McpServerCreate(BaseModel):
     _check_github_url = field_validator("github_url")(
         lambda cls, v: validate_github_url(v)
     )
+    _check_install_command = field_validator("install_command")(
+        lambda cls, v: validate_install_command(v)
+    )
 
 
 class McpServerUpdate(BaseModel):
@@ -83,6 +98,9 @@ class McpServerUpdate(BaseModel):
 
     _check_github_url = field_validator("github_url")(
         lambda cls, v: validate_github_url(v)
+    )
+    _check_install_command = field_validator("install_command")(
+        lambda cls, v: validate_install_command(v)
     )
 
 
