@@ -275,4 +275,4 @@ async def test_resolve_server_by_name_and_hostname(db_session):
     assert "Arcane" in result["error"]
     # Server without credential → clear guidance
     result = await ssh_exec({"server_id": "bare", "command": "uptime"}, db=db_session)
-    assert "no usable credential" in result["error"]
+    assert "credential is incomplete" in result["error"]
