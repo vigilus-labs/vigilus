@@ -40,10 +40,11 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # :latest tracks the newest push to main
-            type=raw,value=latest,enable={{is_default_branch}}
+            # :latest tracks the newest push to main (pinned explicitly so
+            # changing the repo's default branch doesn't change what :latest means)
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             # short commit sha for main builds
-            type=sha,enable={{is_default_branch}}
+            type=sha,enable=${{ github.ref == 'refs/heads/main' }}
             # full semver + major.minor for version tags (vX.Y.Z)
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
