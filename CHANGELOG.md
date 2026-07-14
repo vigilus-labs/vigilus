@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-14
+
 ### Added
 
+- Glowing version badge in the sidebar and Settings when a newer release is available
 - MIT `LICENSE` file, `CONTRIBUTING.md`, and this changelog
 - CI workflow (lint, tests, type-check, build) running on PRs into `main` and `dev`
 
@@ -54,7 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Operator delegation, MCP server manager, RBAC + JIT elevation, audit trail,
   scheduled tasks, server inventory, and multi-provider LLM support
 
-[Unreleased]: https://github.com/vigilus-labs/vigilus/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/vigilus-labs/vigilus/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/vigilus-labs/vigilus/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/vigilus-labs/vigilus/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/vigilus-labs/vigilus/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/vigilus-labs/vigilus/releases/tag/v0.1.0

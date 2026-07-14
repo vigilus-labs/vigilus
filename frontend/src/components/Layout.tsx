@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { ActivityDrawer } from '@/components/ActivityDrawer';
 import { JitBanner } from '@/components/JitBanner';
 import { UpdateBanner } from '@/components/UpdateBanner';
+import { VersionBadge } from '@/components/VersionBadge';
 import { useAuth } from '@/lib/auth';
 
 interface NavItem {
@@ -153,6 +154,7 @@ export function Layout() {
 
         {/* Collapse toggle + user/logout */}
         <div className="border-t border-border px-2.5 py-2.5 shrink-0 space-y-0.5">
+          <VersionBadge collapsed={sidebarCollapsed} />
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             className={cn(

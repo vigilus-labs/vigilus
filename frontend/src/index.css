@@ -79,6 +79,41 @@
   }
 }
 
+/* Soft pulse when a newer Vigilus release is available (sidebar + Settings). */
+@keyframes version-glow-pulse {
+  0%,
+  100% {
+    text-shadow: 0 0 4px rgb(var(--color-accent) / 0.35);
+  }
+  50% {
+    text-shadow:
+      0 0 10px rgb(var(--color-accent) / 0.75),
+      0 0 18px rgb(var(--color-accent) / 0.35);
+  }
+}
+
+@keyframes version-glow-dot-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 3px rgb(var(--color-accent) / 0.4);
+    opacity: 0.85;
+  }
+  50% {
+    box-shadow:
+      0 0 8px rgb(var(--color-accent) / 0.85),
+      0 0 14px rgb(var(--color-accent) / 0.45);
+    opacity: 1;
+  }
+}
+
+.version-glow {
+  animation: version-glow-pulse 2.4s ease-in-out infinite;
+}
+
+.version-glow-dot {
+  animation: version-glow-dot-pulse 2.4s ease-in-out infinite;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;

@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Key, Sliders, Database, Plus, Trash2, Edit2, CheckCircle, XCircle, RefreshCw, Search, UserCog, Radio, ArrowUpCircle, ExternalLink } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useToast, useConfirm } from '../../components/Notifications';
-import { Provider, ProviderType, Credential, CredentialType, SshAuthMethod, ChannelConfig, ChannelAccount, ChannelPlatform, UpdateStatus } from '../../types';
+import { Provider, ProviderType, Credential, CredentialType, SshAuthMethod, ChannelConfig, ChannelAccount, ChannelPlatform } from '../../types';
+import { useUpdateStatus } from '@/hooks/useUpdateStatus';
+import { cn } from '@/lib/utils';
 
 const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
   { value: 'anthropic', label: 'Anthropic' },
@@ -1263,18 +1265,14 @@ function listTimezones(): string[] {
 
 function AboutSection() {
   const toast = useToast();
-  const [status, setStatus] = useState<UpdateStatus | null>(null);
+  const { status, setStatusFromCheck } = useUpdateStatus();
   const [checking, setChecking] = useState(false);
-
-  useEffect(() => {
-    api.getUpdateStatus().then(setStatus).catch(() => {});
-  }, []);
 
   const recheck = async () => {
     setChecking(true);
     try {
       const s = await api.checkForUpdate();
-      setStatus(s);
+      setStatusFromCheck(s);
       if (s.error) toast(s.error, 'error');
       else if (s.update_available) toast(`Vigilus ${s.latest_version} is available`, 'success');
       else toast("You're on the latest version", 'success');
@@ -1304,7 +1302,21 @@ function AboutSection() {
       <div className="rounded-card border border-border bg-surface px-4 py-3 space-y-2">
         <div className="flex items-center justify-between text-[13px]">
           <span className="text-text-secondary">Version</span>
-          <span className="font-mono text-text-primary">{status?.current_version ?? '—'}</span>
+          <span
+            className={cn(
+              'font-mono',
+              status?.update_available
+                ? 'text-accent version-glow'
+                : 'text-text-primary',
+            )}
+            title={
+              status?.update_available
+                ? `Update available: ${status.latest_version ?? 'newer release'}`
+                : undefined
+            }
+          >
+            {status?.current_version ?? '—'}
+          </span>
         </div>
 
         {status && !status.check_enabled && (

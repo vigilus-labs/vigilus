@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowUpCircle, X, ExternalLink } from 'lucide-react';
-import { api } from '@/lib/api';
-import type { UpdateStatus } from '@/types';
+import { useUpdateStatus } from '@/hooks/useUpdateStatus';
 
 const DISMISS_KEY = 'vigilus.update.dismissed';
 
@@ -12,27 +11,14 @@ const DISMISS_KEY = 'vigilus.update.dismissed';
  * until a newer release appears.
  */
 export function UpdateBanner() {
-  const [status, setStatus] = useState<UpdateStatus | null>(null);
+  const { status } = useUpdateStatus();
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-    api
-      .getUpdateStatus()
-      .then((s) => {
-        if (cancelled) return;
-        setStatus(s);
-        if (s.update_available && s.latest_version) {
-          setDismissed(localStorage.getItem(DISMISS_KEY) === s.latest_version);
-        }
-      })
-      .catch(() => {
-        // best-effort; the Settings page exposes a manual re-check
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (status?.update_available && status.latest_version) {
+      setDismissed(localStorage.getItem(DISMISS_KEY) === status.latest_version);
+    }
+  }, [status]);
 
   if (!status?.update_available || dismissed) return null;
 
