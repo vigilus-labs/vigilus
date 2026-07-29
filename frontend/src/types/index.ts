@@ -699,3 +699,32 @@ export interface ScopeSegmentUpdate {
   label?: string | null;
   color?: string | null;
 }
+
+export type UsageWindow = 'today' | '7d' | '30d' | 'all';
+
+export interface UsageTotals {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd: number | null;
+}
+
+export interface UsageByActor extends UsageTotals {
+  actor_type: 'orchestrator' | 'operator' | string;
+  operator_id: string | null;
+  name: string;
+}
+
+export interface UsageByProvider extends UsageTotals {
+  provider_type: string | null;
+  provider_id?: string | null;
+  name: string;
+}
+
+export interface UsageSummary {
+  window: UsageWindow | string;
+  cost_incomplete: boolean;
+  totals: UsageTotals;
+  by_actor: UsageByActor[];
+  by_provider: UsageByProvider[];
+}

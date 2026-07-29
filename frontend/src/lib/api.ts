@@ -51,6 +51,8 @@ import type {
   ScopeSegment,
   ScopeSegmentUpdate,
   UpdateStatus,
+  UsageSummary,
+  UsageWindow,
 } from '@/types';
 
 export interface OrchestratorConfig {
@@ -411,6 +413,12 @@ class ApiClient {
   
   getMetrics() {
     return this.get<any>('/system/metrics');
+  }
+
+  // ─── Usage ──────────────────────────────────────────────────────────
+
+  async getUsage(window: UsageWindow = '7d'): Promise<UsageSummary> {
+    return this.get<UsageSummary>(`/usage?window=${encodeURIComponent(window)}`);
   }
 
   // ─── Updates ────────────────────────────────────────────────────────
