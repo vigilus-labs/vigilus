@@ -9,7 +9,11 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vigilus.core.openrouter_pricing import estimate_openrouter_cost, get_openrouter_prices
+from vigilus.core.openrouter_pricing import (
+    estimate_openrouter_cost,
+    get_cached_openrouter_prices,
+    schedule_openrouter_price_refresh,
+)
 from vigilus.core.orchestrator import get_app_timezone
 from vigilus.db.base import get_session_factory
 from vigilus.db.models import LlmUsage, Operator, UsageActorType
@@ -72,10 +76,12 @@ async def record_llm_usage(
         cost = None
         ptype = (provider_type or "").lower() or None
         if ptype == "openrouter" and model:
-            prices = await get_openrouter_prices()
+            # Never await network on the chat hot path — cache only + bg refresh.
+            prices = get_cached_openrouter_prices()
             cost = estimate_openrouter_cost(
                 model, input_tokens, output_tokens, prices=prices
             )
+            schedule_openrouter_price_refresh()
 
         factory = get_session_factory()
         async with factory() as session:

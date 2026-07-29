@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
 import time
 from typing import Any
@@ -14,12 +15,39 @@ logger = structlog.get_logger(__name__)
 _CACHE: dict[str, tuple[float, float]] | None = None
 _CACHE_AT: float = 0.0
 _TTL_SECONDS = 6 * 3600  # 6 hours
+_REFRESH_TASK: asyncio.Task[Any] | None = None
 
 
 def clear_price_cache() -> None:
-    global _CACHE, _CACHE_AT
+    global _CACHE, _CACHE_AT, _REFRESH_TASK
     _CACHE = None
     _CACHE_AT = 0.0
+    _REFRESH_TASK = None
+
+
+def get_cached_openrouter_prices() -> dict[str, tuple[float, float]]:
+    """Return the current in-memory cache only (never fetches). Empty if unset."""
+    return _CACHE or {}
+
+
+def _cache_needs_refresh() -> bool:
+    if _CACHE is None:
+        return True
+    return (time.monotonic() - _CACHE_AT) >= _TTL_SECONDS
+
+
+def schedule_openrouter_price_refresh() -> None:
+    """Kick off a background refresh if cache is missing/expired (at most one in flight)."""
+    global _REFRESH_TASK
+    if not _cache_needs_refresh():
+        return
+    if _REFRESH_TASK is not None and not _REFRESH_TASK.done():
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    _REFRESH_TASK = loop.create_task(get_openrouter_prices())
 
 
 def estimate_openrouter_cost(

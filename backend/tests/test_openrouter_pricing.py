@@ -32,6 +32,13 @@ def test_estimate_cost_bad_price_returns_none():
     )
 
 
+def test_get_cached_openrouter_prices_empty_then_populated():
+    assert pricing.get_cached_openrouter_prices() == {}
+    pricing._CACHE = {"x/y": (0.1, 0.2)}
+    pricing._CACHE_AT = 1.0
+    assert pricing.get_cached_openrouter_prices() == {"x/y": (0.1, 0.2)}
+
+
 @pytest.mark.asyncio
 async def test_get_openrouter_prices_caches(monkeypatch):
     calls = {"n": 0}

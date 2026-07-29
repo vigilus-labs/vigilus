@@ -1425,7 +1425,7 @@ function formatCost(usd: number | null | undefined): string {
 }
 
 function UsageTab() {
-  const [window, setWindow] = useState<UsageWindow>('7d');
+  const [usageWindow, setUsageWindow] = useState<UsageWindow>('7d');
   const [data, setData] = useState<UsageSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1436,7 +1436,7 @@ function UsageTab() {
       setLoading(true);
       setError('');
       try {
-        const summary = await api.getUsage(window);
+        const summary = await api.getUsage(usageWindow);
         if (!cancelled) setData(summary);
       } catch (err: any) {
         if (!cancelled) setError(err?.message || 'Failed to load usage');
@@ -1447,7 +1447,7 @@ function UsageTab() {
     return () => {
       cancelled = true;
     };
-  }, [window]);
+  }, [usageWindow]);
 
   const windows: { id: UsageWindow; label: string }[] = [
     { id: 'today', label: 'Today' },
@@ -1473,9 +1473,9 @@ function UsageTab() {
           <button
             key={w.id}
             type="button"
-            onClick={() => setWindow(w.id)}
+            onClick={() => setUsageWindow(w.id)}
             className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
-              window === w.id
+              usageWindow === w.id
                 ? 'bg-accent/10 text-accent border-accent/30 font-medium'
                 : 'border-border text-text-secondary hover:bg-surface'
             }`}
