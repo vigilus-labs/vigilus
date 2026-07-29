@@ -56,7 +56,7 @@ async def run_turn(
     # Imported here to avoid a circular import (api.chat imports core modules).
     from vigilus.api.chat import _load_db_messages_as_llm, _run_orchestrator
 
-    provider, _row, model = await resolve_orchestrator_provider(db)
+    provider, provider_row, model = await resolve_orchestrator_provider(db)
     cfg = load_orchestrator_config()
 
     builder = PromptBuilder(db=db, custom_identity=cfg.custom_identity, soul=cfg.soul)
@@ -103,6 +103,9 @@ async def run_turn(
         system_prompt,
         db=db,
         session_id=session.id,
+        provider_id=provider_row.id,
+        provider_type=provider_row.type.value,
+        model=model,
         bridge=bridge,
         cancel_event=cancel_event,
         unattended=unattended,

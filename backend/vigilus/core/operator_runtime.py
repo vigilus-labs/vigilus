@@ -33,6 +33,13 @@ class OperatorRuntime:
         self.provider = build_provider(provider_row)
         if operator.model and hasattr(self.provider, "default_model"):
             self.provider.default_model = operator.model
+        self._provider_id = provider_row.id
+        self._provider_type = (
+            provider_row.type.value
+            if hasattr(provider_row.type, "value")
+            else str(provider_row.type)
+        )
+        self._model = operator.model or provider_row.default_model
         self.tool_registry = ToolRegistry()
 
     async def _get_tools(self) -> list[ToolSpec]:
@@ -145,6 +152,19 @@ class OperatorRuntime:
             except TaskCancelled:
                 logger.info("operator.cancelled_while_waiting", operator=self.operator.name)
                 raise
+
+            from vigilus.core.llm_usage import record_llm_usage
+            from vigilus.db.models import UsageActorType
+
+            await record_llm_usage(
+                usage=response.usage or {},
+                actor_type=UsageActorType.operator,
+                operator_id=self.operator.id,
+                session_id=session_id,
+                provider_id=self._provider_id,
+                provider_type=self._provider_type,
+                model=getattr(self.provider, "default_model", None) or self._model,
+            )
 
             # Build assistant message
             assistant_content = response.content or ""

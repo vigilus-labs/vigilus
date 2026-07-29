@@ -142,3 +142,71 @@ async def test_record_and_summarize_actors(db_session, monkeypatch):
     assert names["Vigilus"]["total_tokens"] == 15
     assert names["Infra"]["total_tokens"] == 130
     assert any(p["provider_type"] == "openrouter" for p in summary["by_provider"])
+
+
+@pytest.mark.asyncio
+async def test_operator_runtime_records_usage(db_session, monkeypatch):
+    from vigilus.core.operator_runtime import OperatorRuntime
+    from vigilus.providers.base import LLMMessage, LLMResponse
+
+    provider = Provider(
+        name="or2",
+        type=ProviderType.openrouter,
+        default_model="m",
+        enabled=True,
+        api_key=None,
+    )
+    db_session.add(provider)
+    op = Operator(
+        name="MeteredOp",
+        description="d",
+        permission_level=PermissionLevel.read,
+        provider_id=None,
+        model="m",
+    )
+    db_session.add(op)
+    await db_session.commit()
+    await db_session.refresh(provider)
+    from sqlalchemy.orm.attributes import set_committed_value
+
+    set_committed_value(op, "provider", provider)
+    set_committed_value(op, "operator_tools", [])
+
+    class FakeProvider:
+        default_model = "m"
+
+        async def complete(self, **kwargs):
+            return LLMResponse(
+                content="done",
+                usage={"input_tokens": 11, "output_tokens": 3},
+            )
+
+    async def fake_prices():
+        return {"m": (0.0, 0.0)}
+
+    monkeypatch.setattr("vigilus.core.llm_usage.get_openrouter_prices", fake_prices)
+
+    runtime = OperatorRuntime(op, fallback_provider=provider)
+    runtime.provider = FakeProvider()
+
+    async def _nop_tools(self):
+        return []
+
+    async def _nop_prompt(self, tools):
+        return None
+
+    monkeypatch.setattr(OperatorRuntime, "_get_tools", _nop_tools)
+    monkeypatch.setattr(OperatorRuntime, "_build_system_prompt", _nop_prompt)
+
+    await runtime.run(
+        [LLMMessage(role="user", content="hi")],
+        session_id="sess-1",
+        max_iterations=1,
+    )
+
+    rows = (await db_session.execute(select(LlmUsage))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].actor_type == UsageActorType.operator
+    assert rows[0].operator_id == op.id
+    assert rows[0].input_tokens == 11
+    assert rows[0].session_id == "sess-1"

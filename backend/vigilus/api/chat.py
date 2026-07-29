@@ -276,6 +276,9 @@ async def _run_orchestrator(
     *,
     db: AsyncSession,
     session_id: str | None = None,
+    provider_id: str | None = None,
+    provider_type: str | None = None,
+    model: str | None = None,
     max_delegations: int = 5,
     bridge: StreamBridge | None = None,
     cancel_event: Any | None = None,  # asyncio.Event — stop when set
@@ -365,6 +368,18 @@ async def _run_orchestrator(
             if bridge:
                 bridge.publish(EVT_ERROR, {"error": str(e)})
             break
+
+        from vigilus.core.llm_usage import record_llm_usage
+        from vigilus.db.models import UsageActorType
+
+        await record_llm_usage(
+            usage=response.usage or {},
+            actor_type=UsageActorType.orchestrator,
+            session_id=session_id,
+            provider_id=provider_id,
+            provider_type=provider_type,
+            model=model or getattr(provider, "default_model", None),
+        )
 
         response_text = response.content or ""
 
@@ -806,6 +821,9 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
             system_prompt,
             db=db,
             session_id=session.id,
+            provider_id=provider_row.id,
+            provider_type=provider_row.type.value,
+            model=model,
             bridge=bridge,
             cancel_event=running_task.cancel_event,
         )
