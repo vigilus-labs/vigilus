@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Token usage dashboard at `/usage`: tokens and estimated cost over time, broken
+  down by actor (Vigilus vs each Operator), model, provider, and heaviest chat
+  sessions. Replaces the smaller Settings → Usage tab
+- Cost estimates for direct Anthropic/OpenAI/Google models via a static
+  list-price table, overridable at `<data_dir>/model_prices.json`
 - MIT `LICENSE` file, `CONTRIBUTING.md`, and this changelog
 - CI workflow (lint, tests, type-check, build) running on PRs into `main` and `dev`
 
