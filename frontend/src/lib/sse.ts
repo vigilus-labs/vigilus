@@ -15,6 +15,7 @@ export type SSEEventType =
   | 'tool_result'
   | 'delegation_result'
   | 'text_delta'
+  | 'text_chunk'
   | 'jit_request'
   | 'done'
   | 'error';
@@ -35,7 +36,7 @@ export interface SSEEventData {
   // delegation_result
   status?: string;
   summary?: string;
-  // text_delta
+  // text_delta (whole message) / text_chunk (incremental slice of it)
   text?: string;
   // done
   message_id?: string;
@@ -92,6 +93,7 @@ export class ChatStream {
       'tool_result',
       'delegation_result',
       'text_delta',
+      'text_chunk',
       'jit_request',
       'done',
       'error',
