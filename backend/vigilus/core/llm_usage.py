@@ -9,6 +9,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vigilus.core.model_pricing import estimate_static_cost
 from vigilus.core.openrouter_pricing import (
     estimate_openrouter_cost,
     get_cached_openrouter_prices,
@@ -16,11 +17,18 @@ from vigilus.core.openrouter_pricing import (
 )
 from vigilus.core.orchestrator import get_app_timezone
 from vigilus.db.base import get_session_factory
-from vigilus.db.models import LlmUsage, Operator, UsageActorType
+from vigilus.db.models import LlmUsage, Operator, Session, UsageActorType
 
 logger = structlog.get_logger(__name__)
 
 _VALID_WINDOWS = frozenset({"today", "7d", "30d", "all"})
+
+# Cap zero-filled series buckets so an "all" window over a long-lived install
+# does not return thousands of points.
+_MAX_FILLED_BUCKETS = 120
+
+# Heaviest sessions surfaced by the dashboard.
+_TOP_SESSIONS_LIMIT = 5
 
 _PROVIDER_NAMES = {
     "openrouter": "OpenRouter",
@@ -82,6 +90,10 @@ async def record_llm_usage(
                 model, input_tokens, output_tokens, prices=prices
             )
             schedule_openrouter_price_refresh()
+        elif model:
+            # Direct providers publish no price API — use the static list-price
+            # table. Unknown models stay unpriced (cost_incomplete).
+            cost = estimate_static_cost(ptype, model, input_tokens, output_tokens)
 
         factory = get_session_factory()
         async with factory() as session:
@@ -187,10 +199,129 @@ async def get_usage_summary(db: AsyncSession, window: str) -> dict:
             }
         _add_tokens(providers[key], row)
 
+    models: dict[tuple[str | None, str | None], dict] = {}
+    for row in rows:
+        key = (row.provider_type, row.model)
+        if key not in models:
+            models[key] = {
+                "provider_type": row.provider_type,
+                "model": row.model,
+                "name": row.model or "Unknown model",
+                **_bucket(),
+            }
+        _add_tokens(models[key], row)
+    by_model = sorted(
+        models.values(), key=lambda m: m["total_tokens"], reverse=True
+    )
+
     return {
         "window": window,
         "cost_incomplete": cost_incomplete,
         "totals": totals,
         "by_actor": by_actor,
         "by_provider": list(providers.values()),
+        "by_model": by_model,
+        "series": _build_series(rows, window, start),
+        "top_sessions": await _build_top_sessions(db, rows),
     }
+
+
+def _as_utc(value: datetime) -> datetime:
+    """Treat naive timestamps (SQLite round-trips) as UTC."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _build_series(
+    rows: list[LlmUsage], window: str, start: datetime | None
+) -> list[dict]:
+    """Bucket usage over time, split by orchestrator vs operators.
+
+    ``today`` buckets hourly; every other window buckets by local calendar day.
+    Empty buckets are zero-filled so the chart shows real gaps, up to
+    ``_MAX_FILLED_BUCKETS``; beyond that only buckets with data are returned.
+    """
+    tz = get_app_timezone()
+    hourly = window == "today"
+    fmt = "%Y-%m-%dT%H:00" if hourly else "%Y-%m-%d"
+
+    def key_of(dt: datetime) -> str:
+        return _as_utc(dt).astimezone(tz).strftime(fmt)
+
+    buckets: dict[str, dict] = {}
+
+    def ensure(key: str) -> dict:
+        if key not in buckets:
+            buckets[key] = {
+                "bucket": key,
+                "orchestrator_tokens": 0,
+                "operator_tokens": 0,
+                "total_tokens": 0,
+                "estimated_cost_usd": None,
+            }
+        return buckets[key]
+
+    now = datetime.now(UTC)
+    lower = start
+    if lower is None and rows:
+        lower = min(_as_utc(r.created_at) for r in rows)
+    if lower is not None:
+        step = timedelta(hours=1) if hourly else timedelta(days=1)
+        local = _as_utc(lower).astimezone(tz)
+        cursor = local.replace(minute=0, second=0, microsecond=0)
+        if not hourly:
+            cursor = cursor.replace(hour=0)
+        filled = 0
+        while cursor <= now.astimezone(tz) and filled < _MAX_FILLED_BUCKETS:
+            ensure(cursor.strftime(fmt))
+            cursor += step
+            filled += 1
+
+    for row in rows:
+        bucket = ensure(key_of(row.created_at))
+        tokens = row.input_tokens + row.output_tokens
+        bucket["total_tokens"] += tokens
+        if row.actor_type == UsageActorType.orchestrator:
+            bucket["orchestrator_tokens"] += tokens
+        else:
+            bucket["operator_tokens"] += tokens
+        if row.estimated_cost_usd is not None:
+            if bucket["estimated_cost_usd"] is None:
+                bucket["estimated_cost_usd"] = 0.0
+            bucket["estimated_cost_usd"] += row.estimated_cost_usd
+
+    return [buckets[k] for k in sorted(buckets)]
+
+
+async def _build_top_sessions(db: AsyncSession, rows: list[LlmUsage]) -> list[dict]:
+    """Heaviest chat sessions in the window, newest activity first on ties."""
+    sessions: dict[str, dict] = {}
+    for row in rows:
+        if not row.session_id:
+            continue
+        if row.session_id not in sessions:
+            sessions[row.session_id] = {
+                "session_id": row.session_id,
+                "title": None,
+                "last_used_at": _as_utc(row.created_at),
+                **_bucket(),
+            }
+        entry = sessions[row.session_id]
+        _add_tokens(entry, row)
+        entry["last_used_at"] = max(entry["last_used_at"], _as_utc(row.created_at))
+
+    if not sessions:
+        return []
+
+    top = sorted(
+        sessions.values(),
+        key=lambda s: (s["total_tokens"], s["last_used_at"]),
+        reverse=True,
+    )[:_TOP_SESSIONS_LIMIT]
+
+    result = await db.execute(
+        select(Session).where(Session.id.in_([s["session_id"] for s in top]))
+    )
+    titles = {s.id: s.title for s in result.scalars().all()}
+    for entry in top:
+        entry["title"] = titles.get(entry["session_id"]) or "Untitled session"
+    return top
