@@ -48,9 +48,7 @@ def test_window_start_today_uses_timezone():
     tz = ZoneInfo("America/Denver")
     now = datetime(2026, 7, 29, 18, 30, tzinfo=UTC)
     start = window_start("today", now=now, tz=tz)
-    local_midnight = now.astimezone(tz).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    local_midnight = now.astimezone(tz).replace(hour=0, minute=0, second=0, microsecond=0)
     assert start == local_midnight.astimezone(UTC)
 
 
@@ -92,9 +90,7 @@ async def test_record_and_summarize_actors(db_session, monkeypatch):
         "vigilus.core.llm_usage.get_cached_openrouter_prices",
         lambda: {"m": (0.001, 0.002)},
     )
-    monkeypatch.setattr(
-        "vigilus.core.llm_usage.schedule_openrouter_price_refresh", lambda: None
-    )
+    monkeypatch.setattr("vigilus.core.llm_usage.schedule_openrouter_price_refresh", lambda: None)
 
     provider = Provider(
         name="or",
@@ -188,9 +184,7 @@ async def test_operator_runtime_records_usage(db_session, monkeypatch):
         "vigilus.core.llm_usage.get_cached_openrouter_prices",
         lambda: {"m": (0.0, 0.0)},
     )
-    monkeypatch.setattr(
-        "vigilus.core.llm_usage.schedule_openrouter_price_refresh", lambda: None
-    )
+    monkeypatch.setattr("vigilus.core.llm_usage.schedule_openrouter_price_refresh", lambda: None)
 
     runtime = OperatorRuntime(op, fallback_provider=provider)
     runtime.provider = FakeProvider()

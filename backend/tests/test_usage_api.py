@@ -27,9 +27,7 @@ async def test_usage_invalid_window(async_client):
 
 @pytest.mark.asyncio
 async def test_usage_aggregates(async_client, db_session, monkeypatch):
-    monkeypatch.setattr(
-        "vigilus.core.llm_usage.schedule_openrouter_price_refresh", lambda: None
-    )
+    monkeypatch.setattr("vigilus.core.llm_usage.schedule_openrouter_price_refresh", lambda: None)
     await record_llm_usage(
         usage={"input_tokens": 40, "output_tokens": 10},
         actor_type=UsageActorType.orchestrator,

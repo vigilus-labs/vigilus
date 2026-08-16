@@ -28,9 +28,7 @@ def test_normalize_model_strips_prefix_and_date():
 
 def test_estimate_static_cost_anthropic():
     # claude-opus-5 is $5/$25 per 1M tokens.
-    cost = model_pricing.estimate_static_cost(
-        "anthropic", "claude-opus-5", 1_000_000, 200_000
-    )
+    cost = model_pricing.estimate_static_cost("anthropic", "claude-opus-5", 1_000_000, 200_000)
     assert cost == pytest.approx(5.0 + 5.0)
 
 

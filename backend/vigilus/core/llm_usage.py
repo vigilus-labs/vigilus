@@ -53,9 +53,7 @@ def window_start(
     tz = tz or get_app_timezone()
 
     if window == "today":
-        local_midnight = now.astimezone(tz).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
+        local_midnight = now.astimezone(tz).replace(hour=0, minute=0, second=0, microsecond=0)
         return local_midnight.astimezone(UTC)
     if window == "7d":
         return now - timedelta(days=7)
@@ -86,9 +84,7 @@ async def record_llm_usage(
         if ptype == "openrouter" and model:
             # Never await network on the chat hot path — cache only + bg refresh.
             prices = get_cached_openrouter_prices()
-            cost = estimate_openrouter_cost(
-                model, input_tokens, output_tokens, prices=prices
-            )
+            cost = estimate_openrouter_cost(model, input_tokens, output_tokens, prices=prices)
             schedule_openrouter_price_refresh()
         elif model:
             # Direct providers publish no price API — use the static list-price
@@ -100,9 +96,7 @@ async def record_llm_usage(
             session.add(
                 LlmUsage(
                     actor_type=(
-                        UsageActorType(actor_type)
-                        if isinstance(actor_type, str)
-                        else actor_type
+                        UsageActorType(actor_type) if isinstance(actor_type, str) else actor_type
                     ),
                     operator_id=operator_id,
                     session_id=session_id,
@@ -210,9 +204,7 @@ async def get_usage_summary(db: AsyncSession, window: str) -> dict:
                 **_bucket(),
             }
         _add_tokens(models[key], row)
-    by_model = sorted(
-        models.values(), key=lambda m: m["total_tokens"], reverse=True
-    )
+    by_model = sorted(models.values(), key=lambda m: m["total_tokens"], reverse=True)
 
     return {
         "window": window,
@@ -231,9 +223,7 @@ def _as_utc(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
-def _build_series(
-    rows: list[LlmUsage], window: str, start: datetime | None
-) -> list[dict]:
+def _build_series(rows: list[LlmUsage], window: str, start: datetime | None) -> list[dict]:
     """Bucket usage over time, split by orchestrator vs operators.
 
     ``today`` buckets hourly; every other window buckets by local calendar day.
@@ -318,9 +308,7 @@ async def _build_top_sessions(db: AsyncSession, rows: list[LlmUsage]) -> list[di
         reverse=True,
     )[:_TOP_SESSIONS_LIMIT]
 
-    result = await db.execute(
-        select(Session).where(Session.id.in_([s["session_id"] for s in top]))
-    )
+    result = await db.execute(select(Session).where(Session.id.in_([s["session_id"] for s in top])))
     titles = {s.id: s.title for s in result.scalars().all()}
     for entry in top:
         entry["title"] = titles.get(entry["session_id"]) or "Untitled session"
