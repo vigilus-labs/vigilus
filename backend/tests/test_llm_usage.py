@@ -216,3 +216,151 @@ async def test_operator_runtime_records_usage(db_session, monkeypatch):
     assert rows[0].operator_id == op.id
     assert rows[0].input_tokens == 11
     assert rows[0].session_id == "sess-1"
+
+
+@pytest.mark.asyncio
+async def test_record_prices_direct_providers_from_static_table(db_session):
+    """Anthropic/OpenAI/Google have no price API — use the static list prices."""
+    await record_llm_usage(
+        usage={"input_tokens": 1_000_000, "output_tokens": 0},
+        actor_type=UsageActorType.orchestrator,
+        provider_type="anthropic",
+        model="claude-opus-5",
+    )
+    row = (await db_session.execute(select(LlmUsage))).scalar_one()
+    assert row.estimated_cost_usd == pytest.approx(5.0)
+
+
+@pytest.mark.asyncio
+async def test_record_leaves_unknown_direct_model_unpriced(db_session):
+    await record_llm_usage(
+        usage={"input_tokens": 10, "output_tokens": 5},
+        actor_type=UsageActorType.orchestrator,
+        provider_type="openai_compat",
+        model="some-local-llama",
+    )
+    row = (await db_session.execute(select(LlmUsage))).scalar_one()
+    assert row.estimated_cost_usd is None
+
+
+@pytest.mark.asyncio
+async def test_summary_by_model_groups_and_sorts(db_session):
+    await record_llm_usage(
+        usage={"input_tokens": 10, "output_tokens": 5},
+        actor_type=UsageActorType.orchestrator,
+        provider_type="anthropic",
+        model="claude-haiku-4-5",
+    )
+    await record_llm_usage(
+        usage={"input_tokens": 400, "output_tokens": 100},
+        actor_type=UsageActorType.orchestrator,
+        provider_type="anthropic",
+        model="claude-opus-5",
+    )
+    await record_llm_usage(
+        usage={"input_tokens": 100, "output_tokens": 0},
+        actor_type=UsageActorType.orchestrator,
+        provider_type="anthropic",
+        model="claude-opus-5",
+    )
+
+    summary = await get_usage_summary(db_session, "all")
+    by_model = summary["by_model"]
+    assert [m["model"] for m in by_model] == ["claude-opus-5", "claude-haiku-4-5"]
+    assert by_model[0]["total_tokens"] == 600
+    assert by_model[1]["total_tokens"] == 15
+
+
+@pytest.mark.asyncio
+async def test_summary_series_splits_actors_and_zero_fills(db_session):
+    op = Operator(
+        name="SeriesOp",
+        description="d",
+        permission_level=PermissionLevel.read,
+    )
+    db_session.add(op)
+    await db_session.commit()
+
+    await record_llm_usage(
+        usage={"input_tokens": 10, "output_tokens": 5},
+        actor_type=UsageActorType.orchestrator,
+        provider_type="anthropic",
+        model="claude-opus-5",
+    )
+    await record_llm_usage(
+        usage={"input_tokens": 20, "output_tokens": 0},
+        actor_type=UsageActorType.operator,
+        operator_id=op.id,
+        provider_type="anthropic",
+        model="claude-opus-5",
+    )
+
+    summary = await get_usage_summary(db_session, "7d")
+    series = summary["series"]
+    # 7d zero-fills one bucket per day.
+    assert len(series) == 8
+    assert [p["bucket"] for p in series] == sorted(p["bucket"] for p in series)
+    assert sum(p["total_tokens"] for p in series) == 35
+    today = series[-1]
+    assert today["orchestrator_tokens"] == 15
+    assert today["operator_tokens"] == 20
+
+
+@pytest.mark.asyncio
+async def test_summary_series_today_is_hourly(db_session):
+    await record_llm_usage(
+        usage={"input_tokens": 1, "output_tokens": 1},
+        actor_type=UsageActorType.orchestrator,
+        provider_type="anthropic",
+        model="claude-opus-5",
+    )
+    series = (await get_usage_summary(db_session, "today"))["series"]
+    assert series
+    assert all("T" in p["bucket"] for p in series)
+
+
+@pytest.mark.asyncio
+async def test_summary_top_sessions_ranked_with_titles(db_session):
+    from vigilus.db.models import Session
+
+    heavy = Session(title="Heavy session")
+    light = Session(title=None)
+    db_session.add_all([heavy, light])
+    await db_session.commit()
+
+    await record_llm_usage(
+        usage={"input_tokens": 1000, "output_tokens": 500},
+        actor_type=UsageActorType.orchestrator,
+        session_id=heavy.id,
+        provider_type="anthropic",
+        model="claude-opus-5",
+    )
+    await record_llm_usage(
+        usage={"input_tokens": 10, "output_tokens": 5},
+        actor_type=UsageActorType.orchestrator,
+        session_id=light.id,
+        provider_type="anthropic",
+        model="claude-opus-5",
+    )
+    # Rows without a session are skipped entirely.
+    await record_llm_usage(
+        usage={"input_tokens": 99, "output_tokens": 99},
+        actor_type=UsageActorType.orchestrator,
+        provider_type="anthropic",
+        model="claude-opus-5",
+    )
+
+    top = (await get_usage_summary(db_session, "all"))["top_sessions"]
+    assert [s["session_id"] for s in top] == [heavy.id, light.id]
+    assert top[0]["title"] == "Heavy session"
+    assert top[0]["total_tokens"] == 1500
+    assert top[1]["title"] == "Untitled session"
+
+
+@pytest.mark.asyncio
+async def test_summary_empty_has_all_sections(db_session):
+    summary = await get_usage_summary(db_session, "all")
+    assert summary["by_model"] == []
+    assert summary["top_sessions"] == []
+    assert summary["series"] == []
+    assert summary["cost_incomplete"] is False
