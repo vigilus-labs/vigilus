@@ -13,8 +13,10 @@ from vigilus.providers.base import (
     LLMMessage,
     LLMResponse,
     ProviderError,
+    TextSink,
     ToolSpec,
     ToolUse,
+    emit_text,
     retry_transient,
 )
 
@@ -121,17 +123,16 @@ class OpenAIProvider(AgentLLM):
             )
         return converted
 
-    async def complete(
+    def _build_kwargs(
         self,
         messages: list[LLMMessage],
         *,
-        system: str | None = None,
-        tools: list[ToolSpec] | None = None,
-        temperature: float = 0.0,
-        max_tokens: int = 4096,
-        stream: bool = False,
-    ) -> LLMResponse | AsyncIterator[LLMResponse]:
-
+        system: str | None,
+        tools: list[ToolSpec] | None,
+        temperature: float,
+        max_tokens: int,
+    ) -> dict[str, Any]:
+        """Assemble the request payload shared by the streaming and plain paths."""
         openai_messages = []
         if system:
             openai_messages.append({"role": "system", "content": system})
@@ -148,6 +149,27 @@ class OpenAIProvider(AgentLLM):
 
         if openai_tools:
             kwargs["tools"] = openai_tools
+
+        return kwargs
+
+    async def complete(
+        self,
+        messages: list[LLMMessage],
+        *,
+        system: str | None = None,
+        tools: list[ToolSpec] | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+        stream: bool = False,
+    ) -> LLMResponse | AsyncIterator[LLMResponse]:
+
+        kwargs = self._build_kwargs(
+            messages,
+            system=system,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
 
         if stream:
             return self._stream_complete(kwargs)
@@ -205,10 +227,102 @@ class OpenAIProvider(AgentLLM):
             raw=msg.model_dump(exclude_none=True),
         )
 
+    async def complete_streaming(
+        self,
+        messages: list[LLMMessage],
+        *,
+        system: str | None = None,
+        tools: list[ToolSpec] | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+        on_text: TextSink | None = None,
+    ) -> LLMResponse:
+        """Stream text deltas, then return the assembled final response.
+
+        Tool-calling requests take the non-streaming path: reassembling
+        fragmented ``tool_calls`` deltas would risk mangling arguments that go
+        on to hit real infrastructure, and nothing displays that text live
+        anyway. Only the orchestrator (which has no tools) streams today.
+        """
+        if tools:
+            return await super().complete_streaming(
+                messages,
+                system=system,
+                tools=tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                on_text=on_text,
+            )
+
+        kwargs = self._build_kwargs(
+            messages,
+            system=system,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        kwargs["stream"] = True
+        # Streamed responses omit usage unless it is asked for; without it the
+        # turn would be invisible to token/cost accounting.
+        kwargs["stream_options"] = {"include_usage": True}
+
+        parts: list[str] = []
+        usage = {"input_tokens": 0, "output_tokens": 0}
+        finish_reason: str | None = None
+        emitted = False
+
+        try:
+            stream = await self.client.chat.completions.create(**kwargs)
+            async for chunk in stream:
+                if getattr(chunk, "usage", None):
+                    usage = {
+                        "input_tokens": chunk.usage.prompt_tokens or 0,
+                        "output_tokens": chunk.usage.completion_tokens or 0,
+                    }
+                # The usage-only trailer (and some gateways' keepalives) carry
+                # no choices at all.
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                if choice.finish_reason:
+                    finish_reason = choice.finish_reason
+                delta = getattr(choice.delta, "content", None)
+                if delta:
+                    parts.append(delta)
+                    emitted = True
+                    await emit_text(on_text, delta)
+        except Exception:
+            if emitted:
+                # Text is already on the user's screen — retrying would
+                # duplicate it, so let the caller handle the failure.
+                raise
+            # Nothing shown yet: fall back to the non-streaming path, which
+            # retries transient errors and copes with gateways that reject
+            # `stream_options`.
+            return await super().complete_streaming(
+                messages,
+                system=system,
+                tools=tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                on_text=on_text,
+            )
+
+        content = "".join(parts)
+        return LLMResponse(
+            content=content,
+            tool_uses=[],
+            stop_reason=finish_reason,
+            usage=usage,
+            raw={"role": "assistant", "content": content},
+        )
+
     async def _stream_complete(self, kwargs: dict) -> AsyncIterator[LLMResponse]:
         kwargs["stream"] = True
         stream = await self.client.chat.completions.create(**kwargs)
         async for chunk in stream:
+            if not chunk.choices:
+                continue
             choice = chunk.choices[0]
             if choice.delta.content:
                 yield LLMResponse(content=choice.delta.content)

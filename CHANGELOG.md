@@ -11,9 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - MIT `LICENSE` file, `CONTRIBUTING.md`, and this changelog
 - CI workflow (lint, tests, type-check, build) running on PRs into `main` and `dev`
+- Orchestrator replies stream into the chat token by token (Anthropic, OpenAI,
+  Google, and OpenAI-compatible endpoints), with token usage still recorded
 
 ### Fixed
 
+- The orchestrator's plan ("I'll have the … Operator check …") now appears as a
+  chat message while the delegated work runs, instead of only once the turn ends
+- Opening a chat stream no longer misses a turn's live activity when the request
+  arrives before the turn finishes starting
 - Configured commands are no longer passed through a shell, preventing shell
   interpretation of their contents
 - Discord slash commands no longer crash with a `NameError` when invoked

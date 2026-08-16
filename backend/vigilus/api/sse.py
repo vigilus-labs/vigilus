@@ -18,8 +18,11 @@ Event format::
     event: tool_result
     data: {"tool": "wazuh_list_alerts", "preview": "Found 3 alerts..."}
 
+    event: text_chunk
+    data: {"text": "I'll have the "}
+
     event: text_delta
-    data: {"text": "I found "}
+    data: {"text": "I'll have the Systems Operator check every server."}
 
     event: delegation_result
     data: {"operator": "Security Monitor", "status": "success", "summary": "Found 3..."}
@@ -80,8 +83,12 @@ EVT_TOOL_RESULT = "tool_result"
 # Delegation completed
 EVT_DELEGATION_RESULT = "delegation_result"
 
-# Streaming LLM text chunk
+# A complete, control-block-stripped orchestrator message
 EVT_TEXT_DELTA = "text_delta"
+
+# An incremental slice of the message currently being generated. Superseded by
+# the EVT_TEXT_DELTA that closes the same message, which is authoritative.
+EVT_TEXT_CHUNK = "text_chunk"
 
 # A JIT approval request was created during this turn
 EVT_JIT_REQUEST = "jit_request"

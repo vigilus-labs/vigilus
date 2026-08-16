@@ -90,6 +90,14 @@ export default function Chat() {
 
   // Activity feed for live streaming
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
+  // Orchestrator prose streamed mid-turn (SSE `text_delta`). Each entry is an
+  // assistant message the backend has already produced but not yet persisted —
+  // rendered as a normal bubble so the plan ("I'll have X do Y…") is visible
+  // while the operators are still working, not only once the turn ends.
+  const [streamedTexts, setStreamedTexts] = useState<string[]>([]);
+  // The message currently being written, assembled from `text_chunk` events.
+  // The `text_delta` that closes the message is authoritative and replaces it.
+  const [streamingText, setStreamingText] = useState('');
   const streamRef = useRef<ChatStream | null>(null);
   // Persistent show/hide for the actions panel (so it doesn't pop in and out
   // each turn). Preference is remembered across sessions.
@@ -188,12 +196,20 @@ export default function Chat() {
     const sid = activeRunning.session_id;
     const fetchBuffer = () => api.getRunningTask(sid).then(res => {
       if (!active || !res.running) return;
-      setActivities((res.activity || []).map(a => ({
-        id: nextActivityId(),
-        type: a.type as SSEEventType,
-        data: a.data as SSEEventData,
-        timestamp: Date.parse(a.ts) || Date.now(),
-      })));
+      const buffered = res.activity || [];
+      // Prose is replayed as chat bubbles, everything else as action rows.
+      setActivities(buffered
+        .filter(a => a.type !== 'text_delta')
+        .map(a => ({
+          id: nextActivityId(),
+          type: a.type as SSEEventType,
+          data: a.data as SSEEventData,
+          timestamp: Date.parse(a.ts) || Date.now(),
+        })));
+      setStreamedTexts(buffered
+        .filter(a => a.type === 'text_delta')
+        .map(a => String((a.data as SSEEventData)?.text ?? '').trim())
+        .filter(Boolean));
     }).catch(() => {});
     fetchBuffer();
     const id = setInterval(fetchBuffer, 2000);
@@ -207,7 +223,12 @@ export default function Chat() {
     const prev = prevRunningSidRef.current;
     prevRunningSidRef.current = cur;
     if (prev && !cur && !loading && activeSession && prev === activeSession.id) {
-      api.listMessages(activeSession.id).then(setMessages).catch(() => {});
+      // Drop the streamed placeholders only once the persisted messages are in
+      // hand, so the prose never blinks out of the transcript.
+      api.listMessages(activeSession.id)
+        .then(setMessages)
+        .catch(() => {})
+        .finally(() => { setStreamedTexts([]); setStreamingText(''); });
     }
   }, [activeRunning?.session_id, loading, activeSession?.id]);
 
@@ -311,6 +332,8 @@ export default function Chat() {
     setActiveSession(sess);
     setJitItems([]);
     setActivities([]);  // restore effect repopulates if this session has a running turn
+    setStreamedTexts([]);
+    setStreamingText('');
     try {
       const msgs = await api.listMessages(sess.id);
       setMessages(msgs);
@@ -334,6 +357,8 @@ export default function Chat() {
         setActiveSession(null);
         setMessages([]);
         setActivities([]);
+        setStreamedTexts([]);
+        setStreamingText('');
         setJitItems([]);
       }
     }
@@ -403,7 +428,7 @@ export default function Chat() {
   // unless the user has scrolled up.
   useEffect(() => {
     scrollToBottom('auto');
-  }, [messages, activities, jitItems, loading]);
+  }, [messages, activities, streamedTexts, streamingText, jitItems, loading]);
 
   // Add an activity event to the live feed
   const addActivity = useCallback((type: SSEEventType, data: SSEEventData) => {
@@ -443,6 +468,8 @@ export default function Chat() {
     setMention(null);
     setSysNotices([]);
     setActivities([]); // Clear previous activities
+    setStreamedTexts([]);
+    setStreamingText('');
     setJitItems(prev => prev.filter(j => !j.resolution)); // Keep only unresolved JIT cards
 
     const tempUserMsg: Msg = {
@@ -463,12 +490,29 @@ export default function Chat() {
     const stream = new ChatStream(activeSession.id);
     streamRef.current = stream;
 
-    stream.on('thinking', (data) => addActivity('thinking', data));
+    stream.on('thinking', (data) => {
+      // A new iteration is starting: anything still half-written belongs to
+      // the previous one and was either finalized or was pure control JSON.
+      setStreamingText('');
+      addActivity('thinking', data);
+    });
     stream.on('delegation_start', (data) => addActivity('delegation_start', data));
     stream.on('tool_call', (data) => addActivity('tool_call', data));
     stream.on('tool_result', (data) => addActivity('tool_result', data));
     stream.on('delegation_result', (data) => addActivity('delegation_result', data));
-    stream.on('text_delta', (data) => addActivity('text_delta', data));
+    // Prose the orchestrator is writing — render it as a chat bubble as it
+    // arrives rather than as an action row, so the user sees the plan while
+    // the delegation it announces is still running.
+    stream.on('text_chunk', (data) => {
+      if (data.text) setStreamingText(prev => prev + data.text);
+    });
+    // The finished message: authoritative (control blocks stripped), so it
+    // replaces whatever the chunks assembled.
+    stream.on('text_delta', (data) => {
+      setStreamingText('');
+      const text = (data.text ?? '').trim();
+      if (text) setStreamedTexts(prev => [...prev, text]);
+    });
     stream.on('jit_request', (data) => {
       const jitId = data.id;
       if (!jitId) return;
@@ -493,7 +537,11 @@ export default function Chat() {
     try {
       await api.sendMessage(activeSession.id, { content: userMsg });
       const msgs = await api.listMessages(activeSession.id);
+      // Swap placeholders for the persisted messages in one batch — the same
+      // text is now in `msgs`, so doing both together avoids a duplicate flash.
       setMessages(msgs);
+      setStreamedTexts([]);
+      setStreamingText('');
       // Refresh the sidebar — the first message auto-titles the chat
       api.listSessions().then(setSessions).catch(() => {});
       scrollToBottom();
@@ -1273,6 +1321,47 @@ export default function Chat() {
                       </div>
                     </div>
                   ))
+                )}
+
+                {/* Prose streamed by the orchestrator during the current turn.
+                    Styled exactly like a persisted assistant message so it
+                    swaps in place, without a visual jump, when the turn ends. */}
+                {streamedTexts.map((text, i) => (
+                  <div key={`streamed-${i}`} className="flex justify-start">
+                    <div className="flex max-w-[85%] gap-3 flex-row">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-accent/10 text-accent">
+                        <Bot className="w-4 h-4" />
+                      </div>
+                      <div className="flex flex-col min-w-0 max-w-full items-start">
+                        <span className="text-[11px] text-text-secondary mb-1 tracking-wide font-medium">
+                          Vigilus
+                        </span>
+                        <div className="max-w-full px-4 py-3 rounded-2xl bg-surface dark:bg-surface text-text-primary dark:text-text-primary border border-border dark:border-border rounded-tl-sm">
+                          <Markdown>{text}</Markdown>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {/* The message being written right now, token by token. */}
+                {streamingText && (
+                  <div className="flex justify-start">
+                    <div className="flex max-w-[85%] gap-3 flex-row">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-accent/10 text-accent">
+                        <Bot className="w-4 h-4" />
+                      </div>
+                      <div className="flex flex-col min-w-0 max-w-full items-start">
+                        <span className="text-[11px] text-text-secondary mb-1 tracking-wide font-medium">
+                          Vigilus
+                        </span>
+                        <div className="max-w-full px-4 py-3 rounded-2xl bg-surface dark:bg-surface text-text-primary dark:text-text-primary border border-border dark:border-border rounded-tl-sm">
+                          <Markdown>{streamingText}</Markdown>
+                          <span className="inline-block w-[2px] h-[13px] -mb-[1px] bg-accent/70 animate-pulse" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {/* System notices from slash command results */}

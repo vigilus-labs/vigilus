@@ -13,8 +13,10 @@ from vigilus.providers.base import (
     AgentLLM,
     LLMMessage,
     LLMResponse,
+    TextSink,
     ToolSpec,
     ToolUse,
+    emit_text,
 )
 
 
@@ -113,6 +115,30 @@ class GoogleProvider(AgentLLM):
             )
         return [types.Tool(function_declarations=functions)]
 
+    def _build_kwargs(
+        self,
+        messages: list[LLMMessage],
+        *,
+        system: str | None,
+        tools: list[ToolSpec] | None,
+        temperature: float,
+        max_tokens: int,
+    ) -> dict[str, Any]:
+        """Assemble the request payload shared by the streaming and plain paths."""
+        config_kwargs: dict[str, Any] = {
+            "temperature": temperature,
+            "max_output_tokens": max_tokens,
+        }
+        if system:
+            config_kwargs["system_instruction"] = system
+
+        return {
+            "model": self.default_model,
+            "contents": self._convert_messages(messages),
+            "config": types.GenerateContentConfig(**config_kwargs),
+            "tools": self._convert_tools(tools),
+        }
+
     async def complete(
         self,
         messages: list[LLMMessage],
@@ -124,24 +150,14 @@ class GoogleProvider(AgentLLM):
         stream: bool = False,
     ) -> LLMResponse | AsyncIterator[LLMResponse]:
 
-        genai_messages = self._convert_messages(messages)
-
-        config_kwargs: dict[str, Any] = {
-            "temperature": temperature,
-            "max_output_tokens": max_tokens,
-        }
-        if system:
-            config_kwargs["system_instruction"] = system
-
-        config = types.GenerateContentConfig(**config_kwargs)
-
-        converted_tools = self._convert_tools(tools)
-
         response = await self.client.aio.models.generate_content(
-            model=self.default_model,
-            contents=genai_messages,
-            config=config,
-            tools=converted_tools,
+            **self._build_kwargs(
+                messages,
+                system=system,
+                tools=tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
         )
 
         content = ""
@@ -176,6 +192,76 @@ class GoogleProvider(AgentLLM):
         return LLMResponse(
             content=content,
             tool_uses=tool_uses,
+            stop_reason="end_turn",
+            usage=usage,
+        )
+
+    async def complete_streaming(
+        self,
+        messages: list[LLMMessage],
+        *,
+        system: str | None = None,
+        tools: list[ToolSpec] | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+        on_text: TextSink | None = None,
+    ) -> LLMResponse:
+        """Stream text chunks, then return the assembled final response.
+
+        Tool-calling requests take the non-streaming path — see the note on
+        :meth:`OpenAIProvider.complete_streaming`.
+        """
+        if tools:
+            return await super().complete_streaming(
+                messages,
+                system=system,
+                tools=tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                on_text=on_text,
+            )
+
+        parts: list[str] = []
+        usage: dict[str, int] = {}
+        emitted = False
+
+        try:
+            stream = await self.client.aio.models.generate_content_stream(
+                **self._build_kwargs(
+                    messages,
+                    system=system,
+                    tools=tools,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            )
+            async for chunk in stream:
+                if chunk.usage_metadata:
+                    usage = {
+                        "input_tokens": chunk.usage_metadata.prompt_token_count or 0,
+                        "output_tokens": chunk.usage_metadata.candidates_token_count or 0,
+                    }
+                text = getattr(chunk, "text", None)
+                if text:
+                    parts.append(text)
+                    emitted = True
+                    await emit_text(on_text, text)
+        except Exception:
+            if emitted:
+                # Already partly on screen — re-running would duplicate it.
+                raise
+            return await super().complete_streaming(
+                messages,
+                system=system,
+                tools=tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                on_text=on_text,
+            )
+
+        return LLMResponse(
+            content="".join(parts),
+            tool_uses=[],
             stop_reason="end_turn",
             usage=usage,
         )

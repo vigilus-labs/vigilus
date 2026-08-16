@@ -14,6 +14,26 @@ T = TypeVar("T")
 # HTTP status codes that indicate a transient (retryable) upstream failure.
 _TRANSIENT_STATUS_CODES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 
+# Receives text as the model generates it. May be sync or async; adapters call
+# it through :func:`emit_text`, which handles both.
+TextSink = Callable[[str], Any]
+
+
+async def emit_text(sink: TextSink | None, text: str) -> None:
+    """Deliver *text* to a caller-supplied sink, awaiting it if needed.
+
+    A failing sink must never take the completion down with it — the text has
+    already been generated and the caller still needs the final response.
+    """
+    if sink is None or not text:
+        return
+    try:
+        result = sink(text)
+        if asyncio.iscoroutine(result):
+            await result
+    except Exception:  # noqa: BLE001 - a broken display must not fail the call
+        pass
+
 
 class ProviderError(RuntimeError):
     """Raised when an LLM provider returns an unusable response.
@@ -182,6 +202,38 @@ class AgentLLM(ABC):
             A single LLMResponse or an async iterator of partial responses.
         """
         ...
+
+    async def complete_streaming(
+        self,
+        messages: list[LLMMessage],
+        *,
+        system: str | None = None,
+        tools: list[ToolSpec] | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+        on_text: TextSink | None = None,
+    ) -> LLMResponse:
+        """Complete, handing text to ``on_text`` as the model produces it.
+
+        The return value is the same fully-formed :class:`LLMResponse` that
+        :meth:`complete` produces — usage, tool uses and all — so callers can
+        stream the display without changing how they handle the result.
+
+        This default implementation does not stream incrementally: it runs a
+        normal completion and delivers the text in one piece. Adapters that
+        support server-sent deltas override it; the ones that don't stay
+        correct, just less live.
+        """
+        response = await self.complete(
+            messages,
+            system=system,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        assert isinstance(response, LLMResponse)  # stream=False never iterates
+        await emit_text(on_text, response.content)
+        return response
 
     @abstractmethod
     async def test_connection(self) -> bool:

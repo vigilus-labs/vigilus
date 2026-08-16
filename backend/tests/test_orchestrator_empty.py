@@ -11,11 +11,15 @@ from __future__ import annotations
 import json
 
 from vigilus.api.chat import _run_orchestrator
-from vigilus.providers.base import LLMMessage, LLMResponse
+from vigilus.providers.base import AgentLLM, LLMMessage, LLMResponse
 
 
-class ScriptedProvider:
-    """Returns canned responses in order; records every call's messages."""
+class ScriptedProvider(AgentLLM):
+    """Returns canned responses in order; records every call's messages.
+
+    Deliberately does *not* override ``complete_streaming`` — the orchestrator
+    must work against providers with no incremental streaming.
+    """
 
     def __init__(self, replies: list[str]):
         self.replies = list(replies)
@@ -26,6 +30,9 @@ class ScriptedProvider:
     ) -> LLMResponse:
         self.calls.append(list(messages))
         return LLMResponse(content=self.replies.pop(0))
+
+    async def test_connection(self) -> bool:
+        return True
 
 
 def _delegation_json() -> str:

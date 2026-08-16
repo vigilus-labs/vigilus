@@ -1,5 +1,7 @@
 """Tests for SSE streaming helpers."""
 
+import asyncio
+
 import pytest
 
 from vigilus.api.sse import SSEEvent, StreamBridge, get_bridge, register_bridge, unregister_bridge
@@ -85,3 +87,49 @@ def test_bridge_registry_nonexistent():
 def test_unregister_nonexistent():
     """Unregistering a non-existent session does not error."""
     unregister_bridge("nonexistent-session")  # Should not raise
+
+
+@pytest.mark.asyncio
+async def test_stream_endpoint_waits_for_late_bridge():
+    """A stream opened before the turn registers its bridge still attaches.
+
+    The frontend opens the stream immediately after POSTing its message, so it
+    can beat the POST handler's bridge registration. Bailing out on the first
+    miss would drop the turn's whole live feed.
+    """
+    from vigilus.api.chat import stream_session
+
+    session_id = "late-bridge-session"
+    bridge = StreamBridge()
+
+    async def _register_late():
+        await asyncio.sleep(0.2)
+        register_bridge(session_id, bridge)
+        bridge.publish("text_delta", {"text": "I'll have the Systems Operator check."})
+        bridge.close()
+
+    registrar = asyncio.create_task(_register_late())
+    try:
+        response = await stream_session(session_id)
+        chunks = [chunk async for chunk in response.body_iterator]
+    finally:
+        await registrar
+        unregister_bridge(session_id)
+
+    assert any("Systems Operator" in c for c in chunks)
+
+
+@pytest.mark.asyncio
+async def test_stream_endpoint_gives_up_without_a_turn():
+    """With no turn running, the stream ends promptly with a done event."""
+    from vigilus.api import chat as chat_api
+
+    original = chat_api._BRIDGE_WAIT_SECONDS
+    chat_api._BRIDGE_WAIT_SECONDS = 0.1
+    try:
+        response = await chat_api.stream_session("no-such-session")
+        chunks = [chunk async for chunk in response.body_iterator]
+    finally:
+        chat_api._BRIDGE_WAIT_SECONDS = original
+
+    assert chunks == ["event: done\ndata: {}\n\n"]

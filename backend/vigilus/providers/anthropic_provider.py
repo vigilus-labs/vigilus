@@ -12,8 +12,10 @@ from vigilus.providers.base import (
     AgentLLM,
     LLMMessage,
     LLMResponse,
+    TextSink,
     ToolSpec,
     ToolUse,
+    emit_text,
 )
 
 
@@ -118,17 +120,16 @@ class AnthropicProvider(AgentLLM):
             )
         return converted
 
-    async def complete(
+    def _build_kwargs(
         self,
         messages: list[LLMMessage],
         *,
-        system: str | None = None,
-        tools: list[ToolSpec] | None = None,
-        temperature: float = 0.0,
-        max_tokens: int = 4096,
-        stream: bool = False,
-    ) -> LLMResponse | AsyncIterator[LLMResponse]:
-        """Send completion to Anthropic."""
+        system: str | None,
+        tools: list[ToolSpec] | None,
+        temperature: float,
+        max_tokens: int,
+    ) -> dict[str, Any]:
+        """Assemble the request payload shared by the streaming and plain paths."""
         anthropic_messages = self._convert_messages(messages)
         anthropic_tools = self._convert_tools(tools)
 
@@ -149,11 +150,10 @@ class AnthropicProvider(AgentLLM):
         if anthropic_tools:
             kwargs["tools"] = anthropic_tools
 
-        if stream:
-            return self._stream_complete(kwargs)
+        return kwargs
 
-        response = await self.client.messages.create(**kwargs)
-
+    def _to_response(self, response: Any) -> LLMResponse:
+        """Map an Anthropic Message onto the provider-agnostic response."""
         content = ""
         tool_uses = []
 
@@ -179,6 +179,57 @@ class AnthropicProvider(AgentLLM):
             },
             raw=response.model_dump(),
         )
+
+    async def complete(
+        self,
+        messages: list[LLMMessage],
+        *,
+        system: str | None = None,
+        tools: list[ToolSpec] | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+        stream: bool = False,
+    ) -> LLMResponse | AsyncIterator[LLMResponse]:
+        """Send completion to Anthropic."""
+        kwargs = self._build_kwargs(
+            messages,
+            system=system,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        if stream:
+            return self._stream_complete(kwargs)
+
+        response = await self.client.messages.create(**kwargs)
+        return self._to_response(response)
+
+    async def complete_streaming(
+        self,
+        messages: list[LLMMessage],
+        *,
+        system: str | None = None,
+        tools: list[ToolSpec] | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+        on_text: TextSink | None = None,
+    ) -> LLMResponse:
+        """Stream text deltas, then return the assembled final message."""
+        kwargs = self._build_kwargs(
+            messages,
+            system=system,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        async with self.client.messages.stream(**kwargs) as stream:
+            async for text in stream.text_stream:
+                await emit_text(on_text, text)
+            final = await stream.get_final_message()
+
+        return self._to_response(final)
 
     async def _stream_complete(self, kwargs: dict) -> AsyncIterator[LLMResponse]:
         """Stream completion from Anthropic."""
