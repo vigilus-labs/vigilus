@@ -15,6 +15,7 @@ import {
   Moon,
   Sun,
   Activity,
+  BarChart3,
   Network,
   PanelLeftClose,
   PanelLeft,
@@ -44,6 +45,7 @@ const navItems: NavItem[] = [
   { label: 'Scope', path: '/scope', icon: Network },
   { label: 'Actions', path: '/actions', icon: ShieldCheck },
   { label: 'JIT', path: '/jit', icon: KeyRound },
+  { label: 'Usage', path: '/usage', icon: BarChart3 },
   { label: 'Settings', path: '/settings', icon: Settings },
 ];
 

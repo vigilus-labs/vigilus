@@ -139,6 +139,11 @@ class FindingSeverity(str, enum.Enum):
     critical = "critical"
 
 
+class UsageActorType(str, enum.Enum):
+    orchestrator = "orchestrator"
+    operator = "operator"
+
+
 # ────────────────────────────────────────────────────────────
 # Helpers
 # ────────────────────────────────────────────────────────────
@@ -678,3 +683,21 @@ class NetworkSegment(Base):
     color = Column(String(32), nullable=True)  # hex, e.g. "#7c3aed"
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class LlmUsage(Base):
+    """Per-completion token usage attributed to Vigilus or an Operator."""
+
+    __tablename__ = "llm_usage"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False, index=True)
+    actor_type = Column(Enum(UsageActorType), nullable=False, index=True)
+    operator_id = Column(String(36), ForeignKey("operators.id", ondelete="SET NULL"), nullable=True)
+    session_id = Column(String(36), ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True)
+    provider_id = Column(String(36), ForeignKey("providers.id", ondelete="SET NULL"), nullable=True)
+    provider_type = Column(String(64), nullable=True, index=True)
+    model = Column(String(255), nullable=True)
+    input_tokens = Column(Integer, nullable=False, default=0)
+    output_tokens = Column(Integer, nullable=False, default=0)
+    estimated_cost_usd = Column(Float, nullable=True)

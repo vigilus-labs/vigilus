@@ -258,6 +258,7 @@ def create_app() -> FastAPI:
     from vigilus.api.servers import router as servers_router
     from vigilus.api.system import router as system_router
     from vigilus.api.tools import router as tools_router
+    from vigilus.api.usage import router as usage_router
 
     auth_dep = [Depends(require_user)]
 
@@ -281,6 +282,7 @@ def create_app() -> FastAPI:
     app.include_router(credentials_router, prefix="/api", dependencies=auth_dep)
     app.include_router(scope_router, prefix="/api", dependencies=auth_dep)
     app.include_router(search_router, prefix="/api", dependencies=auth_dep)
+    app.include_router(usage_router, prefix="/api", dependencies=auth_dep)
 
     # ── Static files (production SPA) ───────────────────────
     frontend_dir = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")

@@ -13,6 +13,7 @@ import Tasks from './pages/Tasks';
 import Servers from './pages/Servers';
 import Scope from './pages/Scope';
 import Actions from './pages/Actions';
+import Usage from './pages/Usage';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Setup from './pages/Setup';
@@ -63,6 +64,7 @@ export default function App() {
                 <Route path="servers" element={<Servers />} />
                 <Route path="scope" element={<Scope />} />
                 <Route path="actions" element={<Actions />} />
+                <Route path="usage" element={<Usage />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Route>
