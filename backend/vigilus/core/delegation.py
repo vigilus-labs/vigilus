@@ -232,10 +232,13 @@ async def execute_delegation(
                 if text:
                     final_text = text
 
+        loop_detected = any(t.get("loop_detected") for t in tool_history)
+
         logger.info(
             "delegation.complete",
             target=target_name,
             tool_calls=len(tool_history),
+            loop_detected=loop_detected,
             response_preview=final_text[:120],
         )
 
@@ -244,6 +247,7 @@ async def execute_delegation(
             "operator": target_name,
             "response": final_text,
             "tool_calls": tool_history,
+            "loop_detected": loop_detected,
         }
 
     except TaskCancelled:

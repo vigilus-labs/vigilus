@@ -388,6 +388,10 @@ export interface RunningTask {
   current_step: string;
   operator: string | null;
   cancelling: boolean;
+  /** Live token totals for this turn, aggregated from llm_usage rows. */
+  tokens_in?: number;
+  tokens_out?: number;
+  cost_usd?: number | null;
 }
 
 export interface RunningTaskActivity {

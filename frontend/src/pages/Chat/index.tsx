@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Bot, User, Wrench, MessageSquare, Trash2, Settings, Activity, Zap, Cpu, CheckCircle2, AlertCircle, KeyRound, Pencil, X, Brain, AtSign, Square, Loader2, ListChecks, Terminal, Share2, Search, Globe, CalendarClock } from 'lucide-react';
+import { Send, Bot, User, Wrench, MessageSquare, Trash2, Settings, Activity, Zap, Cpu, CheckCircle2, AlertCircle, AlertTriangle, KeyRound, Pencil, X, Brain, AtSign, Square, Loader2, ListChecks, Terminal, Share2, Search, Globe, CalendarClock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { MemoryPanel } from '@/components/MemoryPanel';
 import { JitGrantControls, JitGrantOpts } from '@/components/JitGrantControls';
@@ -500,6 +500,7 @@ export default function Chat() {
     stream.on('tool_call', (data) => addActivity('tool_call', data));
     stream.on('tool_result', (data) => addActivity('tool_result', data));
     stream.on('delegation_result', (data) => addActivity('delegation_result', data));
+    stream.on('loop_detected', (data) => addActivity('loop_detected', data));
     // Prose the orchestrator is writing — render it as a chat bubble as it
     // arrives rather than as an action row, so the user sees the plan while
     // the delegation it announces is still running.
@@ -847,6 +848,7 @@ export default function Chat() {
       case 'tool_call': return <Wrench className="w-3.5 h-3.5 text-purple-400" />;
       case 'tool_result': return <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />;
       case 'delegation_result': return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />;
+      case 'loop_detected': return <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />;
       case 'error': return <AlertCircle className="w-3.5 h-3.5 text-red-400" />;
       default: return <Activity className="w-3.5 h-3.5 text-text-secondary" />;
     }
@@ -862,11 +864,15 @@ export default function Chat() {
       case 'tool_call':
         if (d.tool === 'web_search') return `Searching: ${(d.query || '').slice(0, 80)}`;
         if (d.tool === 'web_fetch') return `Reading: ${(d.url || '').slice(0, 80)}`;
-        return `Running ${d.tool || 'tool'} via ${d.operator || 'operator'}`;
+        return d.args_preview
+          ? `Running ${d.tool || 'tool'} ${d.args_preview.slice(0, 90)}`
+          : `Running ${d.tool || 'tool'} via ${d.operator || 'operator'}`;
       case 'tool_result':
         return `${d.tool || 'Tool'}: ${(d.preview || 'completed').slice(0, 100)}`;
       case 'delegation_result':
-        return `${d.operator || 'Operator'} finished (${d.status || 'done'})`;
+        return `${d.operator || 'Operator'} finished (${d.status || 'done'})${d.loop_detected ? ' — loop detected' : ''}`;
+      case 'loop_detected':
+        return `Loop detected — aborted ${d.tool || 'tool'} after ${d.count || '?'} identical calls`;
       case 'text_delta':
         return d.text ? (d.text.length > 100 ? d.text.slice(0, 100) + '...' : d.text) : '';
       case 'error':

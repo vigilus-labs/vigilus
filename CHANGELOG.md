@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-08-19
+
+### Added
+
+- Live visibility into running operators (closes #23): tool calls in the
+  activity feed now show redacted argument previews, expandable to the full
+  (still redacted) arguments in the operator activity drawer
+- Loop detection: an operator run aborts after 3 consecutive identical tool
+  calls and reports why, instead of silently burning tokens. Configurable via
+  `VIGILUS_LOOP_DETECTION_THRESHOLD` (`0` disables)
+- Running turns show live iteration progress (e.g. "Scout: calling ssh_exec
+  (iteration 4/10)") and per-turn token/cost totals in the operator drawer and
+  running-tasks API
+- Stop button in the operator activity drawer to cancel a running operator
+  directly
+
 ## [0.2.3] - 2026-08-19
 
 ### Added

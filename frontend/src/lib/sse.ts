@@ -14,6 +14,7 @@ export type SSEEventType =
   | 'tool_call'
   | 'tool_result'
   | 'delegation_result'
+  | 'loop_detected'
   | 'text_delta'
   | 'text_chunk'
   | 'jit_request'
@@ -30,12 +31,19 @@ export interface SSEEventData {
   tool?: string;
   success?: boolean;
   preview?: string;
+  // tool_call (live visibility) — arguments are redacted server-side
+  args?: Record<string, unknown>;
+  args_preview?: string;
+  max_iterations?: number;
+  // loop_detected
+  count?: number;
   // web_search / web_fetch (research)
   query?: string;
   url?: string;
   // delegation_result
   status?: string;
   summary?: string;
+  loop_detected?: boolean;
   // text_delta (whole message) / text_chunk (incremental slice of it)
   text?: string;
   // done
@@ -92,6 +100,7 @@ export class ChatStream {
       'tool_call',
       'tool_result',
       'delegation_result',
+      'loop_detected',
       'text_delta',
       'text_chunk',
       'jit_request',

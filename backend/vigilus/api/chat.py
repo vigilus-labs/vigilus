@@ -622,6 +622,7 @@ async def _run_orchestrator(
                 {
                     "operator": operator_name,
                     "status": delegation_result.get("status"),
+                    "loop_detected": delegation_result.get("loop_detected", False),
                     "summary": result_summary[:500],
                 },
             )
@@ -671,6 +672,12 @@ def _format_delegation_result(result: dict[str, Any]) -> str:
     tool_calls = result.get("tool_calls", [])
 
     parts = [f"[Operator: {operator}] STATUS: {status}\n"]
+    if result.get("loop_detected"):
+        parts.append(
+            "NOTE: this run was ABORTED by loop detection — the operator caught "
+            "itself repeating an identical tool call. Re-delegating the exact "
+            "same task unchanged will likely loop again; adjust the approach.\n"
+        )
     if response:
         parts.append(f"RESPONSE:\n{response}\n")
     if tool_calls:
@@ -825,6 +832,7 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
         EVT_DELEGATION_RESULT,
         EVT_TEXT_DELTA,
         EVT_ERROR,
+        "loop_detected",
     }
 
     def _record_activity(event: str, data: dict) -> None:

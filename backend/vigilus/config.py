@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     # Bound an individual provider request so a stalled upstream cannot leave
     # an in-memory running task permanently stuck.
     llm_request_timeout_seconds: int = Field(default=120, gt=0)
+    # Abort an operator loop after this many consecutive identical tool calls
+    # (same tool + same arguments). 0 disables loop detection.
+    loop_detection_threshold: int = Field(default=3, ge=0)
 
     # ── CORS ────────────────────────────────────────────────
     cors_origins: list[str] = ["http://localhost:5173"]

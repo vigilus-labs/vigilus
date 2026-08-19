@@ -2,17 +2,39 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import structlog
 
-from vigilus.core.tasks import TaskCancelled, await_cancelled
+from vigilus.core.audit import redact_args
+from vigilus.core.tasks import TaskCancelled, await_cancelled, get_task_registry
 from vigilus.db.models import Operator
 from vigilus.providers.base import LLMMessage, ToolSpec
 from vigilus.providers.registry import build_provider
 from vigilus.tools.registry import ToolRegistry
 
 logger = structlog.get_logger(__name__)
+
+
+def _call_signature(tool_name: str, arguments: dict[str, Any]) -> str:
+    """Canonical signature of a tool call for loop detection.
+
+    Arguments are serialized with sorted keys so the same call made by an LLM
+    with different key ordering is still recognized as a repeat. Computed on
+    the raw arguments (before redaction) — redaction would make two different
+    secrets look identical and hide a real loop.
+    """
+    canonical = json.dumps(arguments, sort_keys=True, separators=(",", ":"), default=str)
+    return f"{tool_name}:{canonical}"
+
+
+def _args_preview(redacted: dict[str, Any] | None, limit: int = 120) -> str:
+    """Compact one-line rendering of redacted tool arguments for live feeds."""
+    if not redacted:
+        return ""
+    text = json.dumps(redacted, default=str, separators=(",", ":"))
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 class OperatorRuntime:
@@ -124,10 +146,26 @@ class OperatorRuntime:
         system_prompt = await self._build_system_prompt(tools)
         tool_history: list[dict[str, Any]] = []
 
+        from vigilus.config import get_settings
+
+        settings = get_settings()
+        # 0 disables loop detection entirely.
+        loop_threshold = settings.loop_detection_threshold
+        last_signature: str | None = None
+        repeat_count = 0
+        loop_detected = False
+
         for iteration in range(max_iterations):
             if cancel_event is not None and cancel_event.is_set():
                 logger.info("operator.cancelled", operator=self.operator.name)
                 break
+
+            # Live progress for the Tasks page / operator drawer.
+            if session_id:
+                get_task_registry().update(
+                    session_id,
+                    step=(f"{self.operator.name}: iteration " f"{iteration + 1}/{max_iterations}"),
+                )
 
             logger.info(
                 "operator.run_iteration",
@@ -137,8 +175,6 @@ class OperatorRuntime:
             )
 
             try:
-                from vigilus.config import get_settings
-
                 response = await await_cancelled(
                     self.provider.complete(
                         messages=messages,
@@ -147,7 +183,7 @@ class OperatorRuntime:
                         temperature=0.0,
                     ),
                     cancel_event,
-                    timeout=get_settings().llm_request_timeout_seconds,
+                    timeout=settings.llm_request_timeout_seconds,
                 )
             except TaskCancelled:
                 logger.info("operator.cancelled_while_waiting", operator=self.operator.name)
@@ -198,7 +234,7 @@ class OperatorRuntime:
                 messages.append(assistant_msg)
 
                 # Execute each tool call
-                for tool_use in response.tool_uses:
+                for idx, tool_use in enumerate(response.tool_uses):
                     if cancel_event is not None and cancel_event.is_set():
                         logger.info("operator.cancelled_midtools", operator=self.operator.name)
                         # Synthesize a tool result so message history stays valid
@@ -213,18 +249,102 @@ class OperatorRuntime:
                         )
                         continue
 
+                    # ── Loop detection ─────────────────────────────
+                    # Signature uses the raw (unredacted) arguments: redaction
+                    # would collapse different secrets into one value and hide
+                    # a real repeat.
+                    signature = _call_signature(tool_use.name, dict(tool_use.arguments or {}))
+                    if signature == last_signature:
+                        repeat_count += 1
+                    else:
+                        last_signature = signature
+                        repeat_count = 1
+
+                    if loop_threshold and repeat_count >= loop_threshold:
+                        logger.warning(
+                            "operator.loop_detected",
+                            operator=self.operator.name,
+                            tool=tool_use.name,
+                            count=repeat_count,
+                        )
+                        notice = (
+                            f"I stopped because I was about to call `{tool_use.name}` "
+                            f"{repeat_count} times in a row with identical arguments — "
+                            f"this looks like a loop, so I aborted instead of repeating "
+                            f"it. I could not make further progress on the task this "
+                            f"way. A different approach is needed: different arguments, "
+                            f"a different tool, or an honest report of what is blocking "
+                            f"progress."
+                        )
+                        if bridge:
+                            bridge.publish(
+                                "loop_detected",
+                                {
+                                    "operator": self.operator.name,
+                                    "tool": tool_use.name,
+                                    "count": repeat_count,
+                                    "args_preview": _args_preview(
+                                        redact_args(dict(tool_use.arguments or {}))
+                                    ),
+                                },
+                            )
+                        # Every remaining tool_use in this batch (including the
+                        # blocked one) gets a synthesized result so the message
+                        # history stays valid for strict providers.
+                        for remaining in response.tool_uses[idx:]:
+                            messages.append(
+                                LLMMessage(
+                                    role="tool",
+                                    name=remaining.name,
+                                    tool_use_id=remaining.id,
+                                    content=(
+                                        "Blocked: run aborted by loop detection "
+                                        "(repeated identical tool call)."
+                                    ),
+                                )
+                            )
+                        messages.append(LLMMessage(role="assistant", content=notice))
+                        tool_history.append(
+                            {
+                                "loop_detected": True,
+                                "tool": tool_use.name,
+                                "count": repeat_count,
+                            }
+                        )
+                        loop_detected = True
+                        break
+
                     logger.info(
                         "operator.tool_call",
                         name=tool_use.name,
-                        args_keys=list(tool_use.arguments.keys()),
+                        args_keys=list(tool_use.arguments.keys()) if tool_use.arguments else [],
                     )
 
+                    if session_id:
+                        get_task_registry().update(
+                            session_id,
+                            step=(
+                                f"{self.operator.name}: calling {tool_use.name} "
+                                f"(iteration {iteration + 1}/{max_iterations})"
+                            ),
+                        )
+
                     if bridge:
+                        # Redact BEFORE publishing: this fires before
+                        # ToolRegistry.execute() pops jit_token, so the raw
+                        # arguments still contain any credential the LLM
+                        # passed. Nothing unredacted may reach the SSE stream
+                        # or the in-memory activity buffer.
+                        safe_args = redact_args(dict(tool_use.arguments or {}))
                         bridge.publish(
                             "tool_call",
                             {
                                 "tool": tool_use.name,
                                 "operator": self.operator.name,
+                                "args": safe_args,
+                                "args_preview": _args_preview(safe_args),
+                                "iteration": iteration + 1,
+                                "max_iterations": max_iterations,
                             },
                         )
 
@@ -273,6 +393,9 @@ class OperatorRuntime:
                     content=assistant_content,
                 )
                 messages.append(assistant_msg)
+                break
+
+            if loop_detected:
                 break
 
         return messages, tool_history
