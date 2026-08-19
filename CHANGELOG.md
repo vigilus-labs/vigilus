@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-19
+
+### Added
+
+- Orchestrator replies stream into the chat token by token (Anthropic, OpenAI,
+  Google, and OpenAI-compatible endpoints), with token usage still recorded
+
+### Fixed
+
+- The orchestrator's plan ("I'll have the … Operator check …") now appears as a
+  chat message while the delegated work runs, instead of only once the turn ends
+- Opening a chat stream no longer misses a turn's live activity when the request
+  arrives before the turn finishes starting
+
 ## [0.2.2] - 2026-08-19
 
 ### Added
@@ -61,7 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Operator delegation, MCP server manager, RBAC + JIT elevation, audit trail,
   scheduled tasks, server inventory, and multi-provider LLM support
 
-[Unreleased]: https://github.com/vigilus-labs/vigilus/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/vigilus-labs/vigilus/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/vigilus-labs/vigilus/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/vigilus-labs/vigilus/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/vigilus-labs/vigilus/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/vigilus-labs/vigilus/compare/v0.1.0...v0.2.0

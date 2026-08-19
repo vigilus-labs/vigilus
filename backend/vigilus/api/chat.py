@@ -24,6 +24,7 @@ from vigilus.api.sse import (
     EVT_DONE,
     EVT_ERROR,
     EVT_JIT_REQUEST,
+    EVT_TEXT_CHUNK,
     EVT_TEXT_DELTA,
     EVT_THINKING,
     EVT_TOOL_CALL,
@@ -41,6 +42,7 @@ from vigilus.core.orchestrator import (
     resolve_orchestrator_provider,
 )
 from vigilus.core.prompt_builder import PromptBuilder
+from vigilus.core.stream_text import SafeTextStreamer
 from vigilus.core.tasks import TaskCancelled, await_cancelled, get_task_registry
 from vigilus.db.base import get_db, get_session_factory
 from vigilus.db.models import ChannelChat, Message, MessageRole, Operator, Session
@@ -120,6 +122,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # ── SSE Streaming ──────────────────────────────────────────
 
+# How long the stream endpoint waits for a turn's bridge to be registered
+# before concluding that no turn is running.
+_BRIDGE_WAIT_SECONDS = 5.0
+_BRIDGE_POLL_SECONDS = 0.05
+
 
 @router.get("/sessions/{session_id}/stream")
 async def stream_session(session_id: str):
@@ -130,7 +137,18 @@ async def stream_session(session_id: str):
     """
     from vigilus.api.sse import get_bridge
 
+    # The frontend opens this stream right after POSTing its message, so the
+    # bridge may not exist yet — the POST handler still has to build the prompt
+    # and (sometimes) compress the context first. Giving up on the first miss
+    # would drop the whole turn's live feed, including the orchestrator's plan
+    # message, leaving the user staring at a spinner until the turn finished.
     bridge = get_bridge(session_id)
+    waited = 0.0
+    while bridge is None and waited < _BRIDGE_WAIT_SECONDS:
+        await asyncio.sleep(_BRIDGE_POLL_SECONDS)
+        waited += _BRIDGE_POLL_SECONDS
+        bridge = get_bridge(session_id)
+
     if not bridge:
         # No active turn — return a done event immediately
         async def _empty():
@@ -333,15 +351,26 @@ async def _run_orchestrator(
         if bridge:
             bridge.publish(EVT_THINKING, {"iteration": iteration})
 
+        # Stream the reply as it is written. The raw stream also carries the
+        # machine-only control blocks, so it goes through SafeTextStreamer,
+        # which releases only text it knows is prose.
+        streamer = SafeTextStreamer()
+
+        async def _on_text(delta: str) -> None:
+            safe = streamer.feed(delta)
+            if safe and bridge:
+                bridge.publish(EVT_TEXT_CHUNK, {"text": safe})
+
         try:
             from vigilus.config import get_settings
 
             response: LLMResponse = await await_cancelled(
-                provider.complete(
+                provider.complete_streaming(
                     messages=history,
                     system=system_prompt,
                     tools=None,  # Orchestrator has NO tools — only delegates
                     temperature=0.0,
+                    on_text=_on_text if bridge else None,
                 ),
                 cancel_event,
                 timeout=get_settings().llm_request_timeout_seconds,
