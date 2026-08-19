@@ -721,10 +721,33 @@ export interface UsageByProvider extends UsageTotals {
   name: string;
 }
 
+export interface UsageByModel extends UsageTotals {
+  provider_type: string | null;
+  model: string | null;
+  name: string;
+}
+
+export interface UsageSession extends UsageTotals {
+  session_id: string;
+  title: string | null;
+  last_used_at: string;
+}
+
+export interface UsageSeriesPoint {
+  bucket: string;
+  orchestrator_tokens: number;
+  operator_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd: number | null;
+}
+
 export interface UsageSummary {
   window: UsageWindow | string;
   cost_incomplete: boolean;
   totals: UsageTotals;
   by_actor: UsageByActor[];
   by_provider: UsageByProvider[];
+  by_model: UsageByModel[];
+  series: UsageSeriesPoint[];
+  top_sessions: UsageSession[];
 }

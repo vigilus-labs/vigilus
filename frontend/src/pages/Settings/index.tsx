@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Key, Sliders, Database, Plus, Trash2, Edit2, CheckCircle, XCircle, RefreshCw, Search, UserCog, Radio, ArrowUpCircle, ExternalLink, BarChart3 } from 'lucide-react';
+import { Key, Sliders, Database, Plus, Trash2, Edit2, CheckCircle, XCircle, RefreshCw, Search, UserCog, Radio, ArrowUpCircle, ExternalLink } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useToast, useConfirm } from '../../components/Notifications';
-import { Provider, ProviderType, Credential, CredentialType, SshAuthMethod, ChannelConfig, ChannelAccount, ChannelPlatform, UpdateStatus, UsageSummary, UsageWindow } from '../../types';
+import { Provider, ProviderType, Credential, CredentialType, SshAuthMethod, ChannelConfig, ChannelAccount, ChannelPlatform, UpdateStatus } from '../../types';
 
 const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
   { value: 'anthropic', label: 'Anthropic' },
@@ -1414,157 +1414,6 @@ function GeneralTab() {
   );
 }
 
-function formatTokens(n: number): string {
-  return n.toLocaleString();
-}
-
-function formatCost(usd: number | null | undefined): string {
-  if (usd == null) return '—';
-  if (usd < 0.01 && usd > 0) return `$${usd.toFixed(4)}`;
-  return `$${usd.toFixed(2)}`;
-}
-
-function UsageTab() {
-  const [usageWindow, setUsageWindow] = useState<UsageWindow>('7d');
-  const [data, setData] = useState<UsageSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const summary = await api.getUsage(usageWindow);
-        if (!cancelled) setData(summary);
-      } catch (err: any) {
-        if (!cancelled) setError(err?.message || 'Failed to load usage');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [usageWindow]);
-
-  const windows: { id: UsageWindow; label: string }[] = [
-    { id: 'today', label: 'Today' },
-    { id: '7d', label: '7d' },
-    { id: '30d', label: '30d' },
-    { id: 'all', label: 'All' },
-  ];
-
-  if (loading && !data) {
-    return <p className="text-sm text-text-secondary">Loading usage…</p>;
-  }
-  if (error) {
-    return <p className="text-sm text-danger">{error}</p>;
-  }
-  if (!data) return null;
-
-  const empty = data.totals.total_tokens === 0;
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-2">
-        {windows.map((w) => (
-          <button
-            key={w.id}
-            type="button"
-            onClick={() => setUsageWindow(w.id)}
-            className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
-              usageWindow === w.id
-                ? 'bg-accent/10 text-accent border-accent/30 font-medium'
-                : 'border-border text-text-secondary hover:bg-surface'
-            }`}
-          >
-            {w.label}
-          </button>
-        ))}
-      </div>
-
-      {empty ? (
-        <p className="text-sm text-text-secondary">
-          No usage recorded yet — send a chat to start metering.
-        </p>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-[12px] text-text-secondary mb-1">Total tokens</p>
-              <p className="text-xl font-medium text-text-primary">
-                {formatTokens(data.totals.total_tokens)}
-              </p>
-              <p className="text-[11px] text-text-secondary mt-1">
-                {formatTokens(data.totals.input_tokens)} in · {formatTokens(data.totals.output_tokens)} out
-              </p>
-            </div>
-            <div>
-              <p className="text-[12px] text-text-secondary mb-1">Estimated cost</p>
-              <p className="text-xl font-medium text-text-primary">
-                {formatCost(data.totals.estimated_cost_usd)}
-              </p>
-              <p className="text-[11px] text-text-secondary mt-1">
-                OpenRouter list prices
-                {data.cost_incomplete ? ' · partial (some providers unpriced)' : ''}
-              </p>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-[13px] font-medium text-text-primary mb-3">By actor</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-[12px] text-text-secondary border-b border-border">
-                    <th className="py-2 pr-3 font-medium">Actor</th>
-                    <th className="py-2 pr-3 font-medium">Input</th>
-                    <th className="py-2 pr-3 font-medium">Output</th>
-                    <th className="py-2 pr-3 font-medium">Total</th>
-                    <th className="py-2 font-medium">Est. cost</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.by_actor.map((row) => (
-                    <tr key={`${row.actor_type}-${row.operator_id ?? 'orch'}`} className="border-b border-border/60">
-                      <td className="py-2 pr-3 text-text-primary">{row.name}</td>
-                      <td className="py-2 pr-3 text-text-secondary">{formatTokens(row.input_tokens)}</td>
-                      <td className="py-2 pr-3 text-text-secondary">{formatTokens(row.output_tokens)}</td>
-                      <td className="py-2 pr-3 text-text-primary">{formatTokens(row.total_tokens)}</td>
-                      <td className="py-2 text-text-secondary">{formatCost(row.estimated_cost_usd)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {data.by_provider.length > 0 && (
-            <div>
-              <h3 className="text-[13px] font-medium text-text-primary mb-3">By provider</h3>
-              <div className="space-y-2">
-                {data.by_provider.map((row) => (
-                  <div
-                    key={row.provider_type ?? row.name}
-                    className="flex items-center justify-between text-sm py-1"
-                  >
-                    <span className="text-text-primary">{row.name}</span>
-                    <span className="text-text-secondary">
-                      {formatTokens(row.total_tokens)} · {formatCost(row.estimated_cost_usd)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('providers');
 
@@ -1589,17 +1438,6 @@ export default function Settings() {
             >
               <Database className="w-4 h-4 mr-3" />
               LLM Providers
-            </button>
-            <button
-              onClick={() => setActiveTab('usage')}
-              className={`w-full flex items-center px-3 py-2 text-sm rounded-md transition-colors ${
-                activeTab === 'usage'
-                  ? 'bg-accent/10 text-accent font-medium'
-                  : 'text-text-secondary hover:bg-surface hover:text-text-primary'
-              }`}
-            >
-              <BarChart3 className="w-4 h-4 mr-3" />
-              Usage
             </button>
             <button
               onClick={() => setActiveTab('credentials')}
@@ -1664,7 +1502,6 @@ export default function Settings() {
           <div className="bg-white border border-border rounded-card shadow-sm p-6">
             <h2 className="text-lg font-medium text-text-primary mb-4 border-b border-border pb-4">
               {activeTab === 'providers' && 'LLM Providers'}
-              {activeTab === 'usage' && 'Usage'}
               {activeTab === 'credentials' && 'Credentials'}
               {activeTab === 'general' && 'General Settings'}
               {activeTab === 'channels' && 'Channels'}
@@ -1673,7 +1510,6 @@ export default function Settings() {
             </h2>
 
             {activeTab === 'providers' && <ProvidersTab />}
-            {activeTab === 'usage' && <UsageTab />}
             {activeTab === 'credentials' && <CredentialsTab />}
             {activeTab === 'general' && <GeneralTab />}
             {activeTab === 'channels' && <ChannelsTab />}
