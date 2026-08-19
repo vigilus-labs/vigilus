@@ -52,7 +52,7 @@ export function statusFor(
 export interface ActivityView {
   label: string;
   detail: string | null;
-  tone: 'tool' | 'result' | 'delegation' | 'thinking' | 'error' | 'text';
+  tone: 'tool' | 'result' | 'delegation' | 'thinking' | 'warning' | 'error' | 'text';
 }
 
 /** Turn a buffered activity event into a compact, human-readable feed row. */
@@ -60,7 +60,13 @@ export function describeActivity(ev: RunningTaskActivity): ActivityView {
   const d = ev.data || {};
   switch (ev.type) {
     case 'tool_call':
-      return { label: `Calling ${d.tool ?? 'tool'}`, detail: d.operator ?? null, tone: 'tool' };
+      return {
+        label: `Calling ${d.tool ?? 'tool'}`,
+        detail: typeof d.args_preview === 'string' && d.args_preview
+          ? d.args_preview
+          : (d.operator ?? null),
+        tone: 'tool',
+      };
     case 'tool_result':
       return {
         label: `${d.tool ?? 'tool'} ${d.success === false ? 'failed' : 'returned'}`,
@@ -78,6 +84,12 @@ export function describeActivity(ev: RunningTaskActivity): ActivityView {
         label: `${d.operator ?? 'Operator'} finished`,
         detail: typeof d.summary === 'string' ? d.summary : null,
         tone: 'delegation',
+      };
+    case 'loop_detected':
+      return {
+        label: `Loop detected — aborted ${d.tool ?? 'tool'} after ${d.count ?? '?'} identical calls`,
+        detail: typeof d.args_preview === 'string' ? d.args_preview : null,
+        tone: 'warning',
       };
     case 'thinking':
       return { label: 'Thinking…', detail: typeof d.text === 'string' ? d.text : null, tone: 'thinking' };

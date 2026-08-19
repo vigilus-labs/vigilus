@@ -21,8 +21,14 @@ _SENSITIVE_PATTERN = re.compile(r"password|secret|key|token|passphrase", re.IGNO
 _MAX_VALUE_LEN = 2048
 
 
-def _redact_args(args: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Return a deep copy of *args* with sensitive values replaced."""
+def redact_args(args: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return a deep copy of *args* with sensitive values replaced.
+
+    Shared by the audit trail and any live event surface (SSE bridge, running
+    task activity buffer) so a credential never leaves the process unredacted.
+    Key names matching the sensitive pattern (password/secret/key/token/...) —
+    including ``jit_token`` — are replaced before serialization.
+    """
     if args is None:
         return None
 
@@ -70,7 +76,7 @@ class AuditService:
         if isinstance(outcome, str):
             outcome = ActionOutcome(outcome)
 
-        safe_args = _redact_args(args)
+        safe_args = redact_args(args)
 
         action = Action(
             event=event,
