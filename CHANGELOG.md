@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-15
+
+### Changed
+
+- Frontend stack upgraded to current majors: React 19, react-router 7,
+  Tailwind CSS 4 (CSS-first config, same bronze/gold theming), Vite 8
+  (Rolldown; builds are ~8× faster), and ESLint 10
+- Backend dependency floors raised to the latest tested versions: paramiko 5,
+  cryptography 50, anthropic 1.5, openai 3.14, mcp 2.2, structlog 26,
+  textual 8.2, plus fastapi, uvicorn, sqlalchemy, alembic, pydantic, and
+  httpx line bumps; full suite (378 tests) validated on Python 3.11 and 3.14
+- CI and the Docker build now use Node 22
+- Alembic `path_separator` deprecation warning fixed
+
+### Removed
+
+- Unused frontend dependencies: react-hook-form, zod, @hookform/resolvers,
+  class-variance-authority, and the empty root `package-lock.json` stub
+
 ## [0.2.4] - 2026-08-19
 
 ### Added
