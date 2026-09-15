@@ -180,6 +180,13 @@ vigilus update            # pull the latest code, rebuild, migrate, restart
 vigilus update --check    # just report whether an update is available
 ```
 
+Git-managed installs can also update themselves from the web UI:
+**Settings → About → Update now** runs the same update with live progress
+and reconnects automatically when the service restarts. System installs
+(created by `install.sh` with sudo) include a polkit rule that lets the
+service restart itself; without it the update still applies, but the
+restart needs `sudo systemctl restart vigilus`.
+
 The update pulls the latest commit from GitHub, reinstalls backend
 dependencies, rebuilds the web UI, applies database migrations, and restarts
 the service (systemd or launchd). Local modifications to tracked files abort

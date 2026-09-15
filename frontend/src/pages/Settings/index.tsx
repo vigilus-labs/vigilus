@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Key, Sliders, Database, Plus, Trash2, Edit2, CheckCircle, XCircle, RefreshCw, Search, UserCog, Radio, ArrowUpCircle, ExternalLink } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useToast, useConfirm } from '../../components/Notifications';
-import { Provider, ProviderType, Credential, CredentialType, SshAuthMethod, ChannelConfig, ChannelAccount, ChannelPlatform, UpdateStatus } from '../../types';
+import { Provider, ProviderType, Credential, CredentialType, SshAuthMethod, ChannelConfig, ChannelAccount, ChannelPlatform, UpdateStatus, UpdateJob } from '../../types';
 
 const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
   { value: 'anthropic', label: 'Anthropic' },
@@ -1263,12 +1263,103 @@ function listTimezones(): string[] {
 
 function AboutSection() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [status, setStatus] = useState<UpdateStatus | null>(null);
+  const [job, setJob] = useState<UpdateJob | null>(null);
   const [checking, setChecking] = useState(false);
+  const [phase, setPhase] = useState<'idle' | 'updating' | 'restarting'>('idle');
+  const phaseRef = useRef(phase);
+  const timerRef = useRef<number | null>(null);
+  const logRef = useRef<HTMLPreElement>(null);
+  const prevVersionRef = useRef<string | null>(null);
+  const failCountRef = useRef(0);
+  const restartStartedRef = useRef(0);
 
-  useEffect(() => {
-    api.getUpdateStatus().then(setStatus).catch(() => {});
-  }, []);
+  const setPhase2 = (p: 'idle' | 'updating' | 'restarting') => {
+    phaseRef.current = p;
+    setPhase(p);
+  };
+
+  const stopPolling = () => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const finish = async (outcome: 'updated' | 'finished' | 'failed' | 'missing') => {
+    stopPolling();
+    setPhase2('idle');
+    const s = await api.checkForUpdate().catch(() => null);
+    if (s) setStatus(s);
+    if (outcome === 'updated') toast(`Vigilus updated to ${s?.current_version}`, 'success');
+    else if (outcome === 'finished') toast('Update finished', 'success');
+    else if (outcome === 'failed') toast('Update failed — see the log below', 'error');
+    else
+      toast('Vigilus did not come back after updating — check it with: systemctl status vigilus', 'error');
+  };
+
+  // Poll the update job. Uses refs (not state) so the timer never captures a
+  // stale phase. While the update restarts the service, requests fail — that
+  // is the expected final phase of a successful update.
+  const schedulePoll = (delay = 1500) => {
+    stopPolling();
+    timerRef.current = window.setTimeout(async () => {
+      if (phaseRef.current === 'idle') return;
+      try {
+        const j = await api.getUpdateJob();
+        failCountRef.current = 0;
+        setJob(j);
+        if (phaseRef.current === 'restarting') {
+          // Server is back — compare versions to see what happened
+          const s = await api.checkForUpdate().catch(() => null);
+          if (s) setStatus(s);
+          if (
+            s &&
+            prevVersionRef.current &&
+            s.current_version !== prevVersionRef.current
+          )
+            finish('updated');
+          else if (j.state === 'error') finish('failed');
+          else finish('finished');
+          return;
+        }
+        if (j.state === 'error') {
+          finish('failed');
+          return;
+        }
+        if (j.state === 'done') {
+          // Restart completed before we noticed the outage (or wasn't needed)
+          const s = await api.getUpdateStatus().catch(() => null);
+          if (s) setStatus(s);
+          if (
+            s &&
+            prevVersionRef.current &&
+            s.current_version !== prevVersionRef.current
+          )
+            finish('updated');
+          else finish('finished');
+          return;
+        }
+        schedulePoll();
+      } catch {
+        if (phaseRef.current === 'updating') {
+          failCountRef.current++;
+          // A blip is fine; two misses in a row = the service is restarting
+          if (failCountRef.current >= 2) {
+            setPhase2('restarting');
+            restartStartedRef.current = Date.now();
+          }
+        } else if (phaseRef.current === 'restarting') {
+          if (Date.now() - restartStartedRef.current > 180_000) {
+            finish('missing');
+            return;
+          }
+        }
+        schedulePoll(phaseRef.current === 'restarting' ? 2500 : 1500);
+      }
+    }, delay);
+  };
 
   const recheck = async () => {
     setChecking(true);
@@ -1284,6 +1375,49 @@ function AboutSection() {
       setChecking(false);
     }
   };
+
+  const startUpdate = async () => {
+    const ok = await confirm({
+      title: 'Update Vigilus?',
+      message:
+        'Pulls the latest code from GitHub, reinstalls backend dependencies, rebuilds the web UI, applies database migrations, and restarts the service. Your data and .env are not touched. The UI will reconnect automatically.',
+      confirmLabel: 'Update now',
+    });
+    if (!ok) return;
+    prevVersionRef.current = status?.current_version ?? null;
+    failCountRef.current = 0;
+    try {
+      const j = await api.startSelfUpdate();
+      setJob(j);
+      setPhase2('updating');
+      schedulePoll();
+    } catch (err) {
+      toast(`Could not start the update: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  useEffect(() => {
+    api.getUpdateStatus().then(setStatus).catch(() => {});
+    // Resume following an update started before this page (re)loaded
+    api
+      .getUpdateJob()
+      .then((j) => {
+        setJob(j);
+        if (j.state === 'running') {
+          setPhase2('updating');
+          schedulePoll(1500);
+        }
+      })
+      .catch(() => {});
+    return stopPolling;
+    // Mount-only: attach to an already-running update job once. schedulePoll
+    // reads refs, so re-creating the effect on identity changes is pointless.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [job?.output.length]);
 
   return (
     <div className="space-y-3 pt-6 border-t border-border">
@@ -1331,10 +1465,16 @@ function AboutSection() {
                 </a>
               )}
               <div className="mt-1.5 text-[12px] text-text-secondary">
-                Pull the new image:
-                <code className="block mt-1 px-2 py-1 rounded bg-bg text-text-primary overflow-x-auto">
-                  docker pull {status.image}:v{status.latest_version}
-                </code>
+                {job?.can_self_update ? (
+                  <>Use “Update now” below to apply it.</>
+                ) : (
+                  <>
+                    Pull the new image:
+                    <code className="block mt-1 px-2 py-1 rounded bg-bg text-text-primary overflow-x-auto">
+                      docker pull {status.image}:v{status.latest_version}
+                    </code>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1352,6 +1492,40 @@ function AboutSection() {
             <XCircle className="w-4 h-4 text-amber-500 shrink-0" />
             {status.error}
           </div>
+        )}
+
+        {job?.can_self_update && phase === 'idle' && (
+          <div className="pt-1">
+            <button onClick={startUpdate} className="btn-primary text-[12px]">
+              <ArrowUpCircle className="w-3.5 h-3.5" />
+              Update now
+            </button>
+          </div>
+        )}
+
+        {phase !== 'idle' && (
+          <div className="pt-1 space-y-2">
+            <div className="flex items-center gap-2 text-[13px] text-text-primary">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-accent" />
+              {phase === 'updating'
+                ? 'Updating Vigilus…'
+                : 'Restarting — waiting for Vigilus to come back…'}
+            </div>
+            {job && job.output.length > 0 && (
+              <pre
+                ref={logRef}
+                className="max-h-48 overflow-y-auto rounded bg-bg border border-border px-3 py-2 text-[11px] font-mono text-text-secondary whitespace-pre-wrap break-words"
+              >
+                {job.output.join('\n')}
+              </pre>
+            )}
+          </div>
+        )}
+
+        {phase === 'idle' && job?.state === 'error' && job.output.length > 0 && (
+          <pre className="max-h-48 overflow-y-auto rounded bg-bg border border-border px-3 py-2 text-[11px] font-mono text-text-secondary whitespace-pre-wrap break-words">
+            {job.output.join('\n')}
+          </pre>
         )}
       </div>
     </div>

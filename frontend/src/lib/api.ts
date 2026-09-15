@@ -51,6 +51,7 @@ import type {
   ScopeSegment,
   ScopeSegmentUpdate,
   UpdateStatus,
+  UpdateJob,
   UsageSummary,
   UsageWindow,
 } from '@/types';
@@ -429,6 +430,14 @@ class ApiClient {
 
   checkForUpdate() {
     return this.post<UpdateStatus>('/system/update/check');
+  }
+
+  getUpdateJob() {
+    return this.get<UpdateJob>('/system/update/job');
+  }
+
+  startSelfUpdate() {
+    return this.post<UpdateJob>('/system/update/run');
   }
 
   // ─── Scheduled Tasks ────────────────────────────────────

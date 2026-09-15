@@ -7,6 +7,7 @@ clobber local changes, --check being read-only, and --force.
 """
 
 import argparse
+import os
 import subprocess
 
 import pytest
@@ -52,7 +53,7 @@ def repos(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "_update_backend_deps", lambda backend_dir: calls.append("pip"))
     monkeypatch.setattr(cli, "_rebuild_frontend", lambda frontend_dir: calls.append("npm"))
     monkeypatch.setattr(cli, "_run_migrations", lambda backend_dir: calls.append("migrate"))
-    monkeypatch.setattr(cli, "_restart_service", lambda: calls.append("restart"))
+    monkeypatch.setattr(cli, "_restart_service", lambda: calls.append("restart") or True)
     return origin, install, calls
 
 
@@ -88,6 +89,27 @@ def test_update_restarts_service_by_default(repos):
     cli.cmd_update(_args(no_restart=False))
 
     assert calls == ["pip", "npm", "migrate", "restart"]
+
+
+def test_restart_failure_is_an_incomplete_update(repos, monkeypatch, capsys):
+    """A failed restart must not report success: the running service is stale."""
+    origin, install, calls = repos
+    _advance_origin(origin)
+
+    def failed_restart():
+        calls.append("restart-failed")
+        return False
+
+    monkeypatch.setattr(cli, "_restart_service", failed_restart)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_update(_args(no_restart=False))
+
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "still serving" in err
+    assert "not fully updated" in err
+    assert calls == ["pip", "npm", "migrate", "restart-failed"]
 
 
 def test_check_reports_without_modifying(repos, capsys):
@@ -171,3 +193,98 @@ def test_restart_plan_macos_launchd():
 def test_restart_plan_none_when_no_service():
     assert cli._service_restart_plan("linux", exists=lambda p: False) is None
     assert cli._service_restart_plan("darwin", exists=lambda p: False) is None
+
+
+# ── restart escalation + staleness detection ─────────────────────────────
+
+
+class _Res:
+    def __init__(self, rc, err=""):
+        self.returncode = rc
+        self.stderr = err
+        self.stdout = ""
+
+
+def test_restart_escalates_to_sudo_for_system_units(monkeypatch, capsys):
+    """Non-root + system unit: plain systemctl fails, retry via sudo."""
+    monkeypatch.setattr(
+        cli,
+        "_service_restart_plan",
+        lambda platform=None, exists=None: (
+            "systemd service vigilus",
+            ["systemctl", "restart", "vigilus"],
+            "sudo systemctl restart vigilus",
+        ),
+    )
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    attempted = []
+
+    def fake_run(argv, **kwargs):
+        attempted.append(argv)
+        return _Res(1, "Access denied") if argv[0] == "systemctl" else _Res(0)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    assert cli._restart_service() is True
+    assert attempted == [
+        ["systemctl", "restart", "vigilus"],
+        ["sudo", "systemctl", "restart", "vigilus"],
+    ]
+    assert "retrying with sudo" in capsys.readouterr().out
+
+
+def test_no_sudo_escalation_for_user_units(monkeypatch, capsys):
+    monkeypatch.setattr(
+        cli,
+        "_service_restart_plan",
+        lambda platform=None, exists=None: (
+            "user systemd service vigilus",
+            ["systemctl", "--user", "restart", "vigilus"],
+            None,
+        ),
+    )
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    attempted = []
+
+    def fake_run(argv, **kwargs):
+        attempted.append(argv)
+        return _Res(0)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    assert cli._restart_service() is True
+    assert attempted == [["systemctl", "--user", "restart", "vigilus"]]
+
+
+def test_check_and_noop_warn_when_service_never_restarted(repos, monkeypatch, capsys):
+    """After an update whose restart never happened, both the --check and the
+    no-op path must say the running service is still the old version."""
+    origin, install, calls = repos
+    _advance_origin(origin)
+    cli.cmd_update(_args())  # applies update with no_restart=True (writes stamp)
+    capsys.readouterr()
+    monkeypatch.setattr(cli, "_service_running_old_code", lambda root: True)
+
+    cli.cmd_update(_args(check=True))
+    assert "OLD version" in capsys.readouterr().out
+
+    cli.cmd_update(_args())  # already-up-to-date no-op path
+    out = capsys.readouterr().out
+    assert "OLD version" in out
+    assert "Already up to date" in out
+
+
+def test_proc_start_epoch_parses_stat_with_spaced_comm(tmp_path):
+    proc = tmp_path / "proc"
+    pid_dir = proc / "42"
+    pid_dir.mkdir(parents=True)
+    ticks = 12_345
+    # comm "uvicorn worke" contains a space; 19 fields between state and starttime
+    (pid_dir / "stat").write_text(
+        "42 (uvicorn worke) S 1 42 42 0 -1 4194560 0 0 0 0 " f"1 2 3 4 5 6 7 8 {ticks} 0 0 0\n"
+    )
+    (proc / "stat").write_text("cpu 0 0 0 0 0 0 0 0 0 0\nbtime 1700000000\n")
+
+    hz = os.sysconf("SC_CLK_TCK")
+    assert cli._proc_start_epoch(42, str(proc)) == 1700000000 + ticks / hz
+    assert cli._proc_start_epoch(999, str(proc)) is None

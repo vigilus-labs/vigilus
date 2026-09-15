@@ -401,22 +401,126 @@ def _run_migrations(backend_dir) -> None:
         sys.exit(1)
 
 
-def _restart_service() -> None:
+def _restart_service() -> bool:
+    """Restart the managed service.
+
+    Returns True when the new code is running (or there is no managed service
+    to restart, e.g. manual/dev runs). Returns False only when a restart was
+    attempted and failed — the caller must treat that as an incomplete update.
+    """
     import subprocess
 
     plan = _service_restart_plan()
     if plan is None:
         print("✓ Update complete. Restart Vigilus to run the new version.")
-        return
+        return True
     description, argv, fallback_hint = plan
     res = subprocess.run(argv, capture_output=True, text=True)
+    if res.returncode != 0 and _needs_sudo_for(argv):
+        # System units can't be restarted by an unprivileged user. Retry via
+        # sudo: interactive users get a password prompt (the update itself
+        # ran fine without root), non-interactive contexts fail fast here.
+        print(f"Restarting {description} requires root — retrying with sudo...")
+        res = subprocess.run(["sudo", *argv], capture_output=True, text=True)
     if res.returncode == 0:
         print(f"✓ Restarted {description}.")
-        return
+        return True
     detail = (res.stderr or res.stdout).strip()
     print(f"⚠ Could not restart {description}: {detail}", file=sys.stderr)
     if fallback_hint:
         print(f"  Restart it yourself with: {fallback_hint}", file=sys.stderr)
+    return False
+
+
+def _needs_sudo_for(argv: list[str]) -> bool:
+    """True when restarting via ``argv`` requires root (system systemd unit)."""
+    return (
+        argv[:1] == ["systemctl"]
+        and "--user" not in argv
+        and hasattr(os, "geteuid")
+        and os.geteuid() != 0
+    )
+
+
+def _write_update_stamp(root, sha: str) -> None:
+    """Record that an update was applied, so staleness can be detected.
+
+    The file is untracked (and gitignored); its mtime marks when the code on
+    disk was updated. ``vigilus update --check`` compares it against the
+    running service's process start time to catch installs whose update was
+    applied but whose service was never restarted.
+    """
+    from pathlib import Path
+
+    stamp = Path(root) / ".update-stamp"
+    try:
+        stamp.write_text(f"{sha}\n")
+    except OSError as exc:  # non-fatal — staleness detection just won't work
+        print(f"⚠ Could not write {stamp}: {exc}", file=sys.stderr)
+
+
+def _proc_start_epoch(pid: int, proc: str = "/proc") -> float | None:
+    """Wall-clock start time of a PID (epoch seconds), or None if unreadable."""
+    from pathlib import Path
+
+    try:
+        base = Path(proc)
+        stat = (base / str(pid) / "stat").read_text()
+        # Fields after the parenthesized comm; starttime is field 22 overall,
+        # i.e. index 19 counting from field 3. comm may contain spaces, hence
+        # the rsplit on ')'.
+        starttime_ticks = int(stat.rsplit(")", 1)[1].split()[19])
+        btime = next(
+            int(line.split()[1])
+            for line in (base / "stat").read_text().splitlines()
+            if line.startswith("btime")
+        )
+        return btime + starttime_ticks / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError, StopIteration):
+        return None
+
+
+def _service_running_old_code(root) -> bool | None:
+    """True if the service process started before the last applied update.
+
+    Best-effort: None when it can't be determined (no stamp yet, no managed
+    service, systemd unreachable, or an unreadable PID).
+    """
+    import subprocess
+    from pathlib import Path
+
+    stamp = Path(root) / ".update-stamp"
+    if not stamp.exists():
+        return None
+    plan = _service_restart_plan()
+    if plan is None or plan[1][0] != "systemctl":
+        return None
+    argv = plan[1]
+    user_args = ("--user",) if "--user" in argv else ()
+    systemctl = ["systemctl", *user_args, "show", "vigilus"]
+    res = subprocess.run([*systemctl, "--value", "-p", "MainPID"], capture_output=True, text=True)
+    if res.returncode != 0:
+        return None
+    pid = res.stdout.strip()
+    if not pid.isdigit() or pid == "0":
+        return None
+    started = _proc_start_epoch(int(pid))
+    if started is None:
+        return None
+    return started < stamp.stat().st_mtime
+
+
+def _warn_if_service_stale(root) -> bool:
+    """Print a warning when the running service predates the last update."""
+    if not _service_running_old_code(root):
+        return False
+    plan = _service_restart_plan()
+    hint = f" Restart it with: {plan[2]}" if plan and plan[2] else ""
+    print(
+        "⚠ The running service started before the last update and is still the "
+        f"OLD version.{hint}"
+    )
+    return True
 
 
 def cmd_update(args: argparse.Namespace) -> None:
@@ -466,12 +570,14 @@ def cmd_update(args: argparse.Namespace) -> None:
 
     if args.check:
         if up_to_date:
-            print(f"✓ Already up to date ({local[:7]} on {branch}).")
+            if not _warn_if_service_stale(root):
+                print(f"✓ Already up to date ({local[:7]} on {branch}).")
         else:
             print(f"Update available: {local[:7]} → {remote[:7]}. Run 'vigilus update' to apply.")
         return
 
     if up_to_date and not args.force:
+        _warn_if_service_stale(root)
         print(f"✓ Already up to date ({local[:7]} on {branch}).")
         return
 
@@ -504,12 +610,23 @@ def cmd_update(args: argparse.Namespace) -> None:
             new_version = f"v{match.group(1)} "
     except OSError:
         pass
+
+    from vigilus import __version__ as previous_version
+
+    _write_update_stamp(root, remote)
     print(f"✓ Vigilus updated to {new_version}({remote[:7]}).")
 
     if args.no_restart:
         print("Restart skipped (--no-restart). The running server is still on the old version.")
         return
-    _restart_service()
+    if not _restart_service():
+        print(
+            f"ERROR: the update was applied to disk, but the running service could "
+            f"not be restarted and is still serving v{previous_version}. "
+            "Vigilus is not fully updated until it is restarted.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 def cmd_doctor(args: argparse.Namespace) -> None:
