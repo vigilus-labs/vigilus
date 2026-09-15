@@ -151,7 +151,7 @@ function HostNode({ data }: NodeProps) {
     <div
       className={cn(
         'relative px-3 py-2 rounded-lg border-2 bg-white dark:bg-surface min-w-[140px] transition-shadow',
-        selected ? 'ring-2 ring-accent shadow-md' : 'shadow-sm',
+        selected ? 'ring-2 ring-accent shadow-md' : 'shadow-xs',
         managed && discovered
           ? 'border-accent'
           : managed
@@ -161,7 +161,7 @@ function HostNode({ data }: NodeProps) {
     >
       {!managed && node.ip && (
         <button
-          className="nodrag nopan absolute -top-2 -right-2 w-5 h-5 rounded-full bg-accent text-white flex items-center justify-center shadow-sm hover:bg-accent-hover transition-colors"
+          className="nodrag nopan absolute -top-2 -right-2 w-5 h-5 rounded-full bg-accent text-white flex items-center justify-center shadow-xs hover:bg-accent-hover transition-colors"
           title="Add to Server Inventory"
           onClick={(e) => {
             e.stopPropagation();
@@ -451,7 +451,7 @@ export function TopologyGraph({
       <Background color="rgb(var(--color-border))" gap={20} size={1} />
       <Controls
         showInteractive={false}
-        className="!bg-surface !border-border !rounded-md !shadow-sm [&>button]:!bg-surface [&>button]:!border-border [&>button]:!text-text-primary"
+        className="!bg-surface !border-border !rounded-md !shadow-xs [&>button]:!bg-surface [&>button]:!border-border [&>button]:!text-text-primary"
       />
     </ReactFlow>
   );

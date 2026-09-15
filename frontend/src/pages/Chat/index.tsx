@@ -898,7 +898,7 @@ export default function Chat() {
               onClick={() => switchTab('app')}
               className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[12px] rounded transition-colors ${
                 chatTab === 'app'
-                  ? 'bg-white dark:bg-bg text-text-primary dark:text-text-primary shadow-sm font-medium'
+                  ? 'bg-white dark:bg-bg text-text-primary dark:text-text-primary shadow-xs font-medium'
                   : 'text-text-secondary hover:text-text-primary'
               }`}
             >
@@ -909,7 +909,7 @@ export default function Chat() {
               onClick={() => switchTab('channels')}
               className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[12px] rounded transition-colors ${
                 chatTab === 'channels'
-                  ? 'bg-white dark:bg-bg text-text-primary dark:text-text-primary shadow-sm font-medium'
+                  ? 'bg-white dark:bg-bg text-text-primary dark:text-text-primary shadow-xs font-medium'
                   : 'text-text-secondary hover:text-text-primary'
               }`}
             >
@@ -920,7 +920,7 @@ export default function Chat() {
               onClick={() => switchTab('tasks')}
               className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[12px] rounded transition-colors ${
                 chatTab === 'tasks'
-                  ? 'bg-white dark:bg-bg text-text-primary dark:text-text-primary shadow-sm font-medium'
+                  ? 'bg-white dark:bg-bg text-text-primary dark:text-text-primary shadow-xs font-medium'
                   : 'text-text-secondary hover:text-text-primary'
               }`}
             >
@@ -984,7 +984,7 @@ export default function Chat() {
                       if (e.key === 'Escape') setRenamingId(null);
                     }}
                     onBlur={commitRename}
-                    className="w-full px-1.5 py-0.5 text-[13px] rounded border border-accent bg-white dark:bg-surface text-text-primary dark:text-text-primary outline-none"
+                    className="w-full px-1.5 py-0.5 text-[13px] rounded border border-accent bg-white dark:bg-surface text-text-primary dark:text-text-primary outline-hidden"
                   />
                 ) : (
                   <div className="truncate">{sess.title || 'Chat Session'}</div>
@@ -1146,7 +1146,7 @@ export default function Chat() {
                       onClick={() => setConfigTab('provider')}
                       className={`flex items-center gap-1.5 px-2.5 py-1 text-[12px] rounded transition-colors ${
                         configTab === 'provider'
-                          ? 'bg-white dark:bg-surface text-text-primary dark:text-text-primary shadow-sm font-medium'
+                          ? 'bg-white dark:bg-surface text-text-primary dark:text-text-primary shadow-xs font-medium'
                           : 'text-text-secondary hover:text-text-primary'
                       }`}
                     >
@@ -1156,7 +1156,7 @@ export default function Chat() {
                       onClick={() => setConfigTab('soul')}
                       className={`flex items-center gap-1.5 px-2.5 py-1 text-[12px] rounded transition-colors ${
                         configTab === 'soul'
-                          ? 'bg-white dark:bg-surface text-text-primary dark:text-text-primary shadow-sm font-medium'
+                          ? 'bg-white dark:bg-surface text-text-primary dark:text-text-primary shadow-xs font-medium'
                           : 'text-text-secondary hover:text-text-primary'
                       }`}
                     >

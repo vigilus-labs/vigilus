@@ -264,7 +264,7 @@ export default function Servers() {
         <div className="py-12 text-center text-text-secondary text-sm">Loading servers...</div>
       ) : servers.length === 0 ? (
         <div className="bg-surface border border-border rounded-card p-12 text-center">
-          <div className="bg-white dark:bg-surface w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-border shadow-sm">
+          <div className="bg-white dark:bg-surface w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-border shadow-xs">
             <ServerIcon className="w-8 h-8 text-text-secondary" />
           </div>
           <h3 className="text-lg font-medium text-text-primary mb-2">No servers found</h3>
@@ -281,7 +281,7 @@ export default function Servers() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {servers.map(server => (
-            <div key={server.id} className="bg-white dark:bg-surface border border-border rounded-card p-5 shadow-sm">
+            <div key={server.id} className="bg-white dark:bg-surface border border-border rounded-card p-5 shadow-xs">
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center">
                   <div className={cn("w-2 h-2 rounded-full mr-2", server.status === 'online' ? "bg-success" : server.status === 'offline' ? "bg-danger" : "bg-warning")} />

@@ -258,7 +258,7 @@ export default function Tools() {
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center px-3 py-1.5 text-[13px] font-medium rounded-md bg-accent text-white hover:bg-accent-hover transition-colors shadow-sm"
+          className="flex items-center px-3 py-1.5 text-[13px] font-medium rounded-md bg-accent text-white hover:bg-accent-hover transition-colors shadow-xs"
         >
           <Plus className="w-4 h-4 mr-1.5" />
           Add Tool
@@ -391,7 +391,7 @@ export default function Tools() {
                     value={form.name}
                     onChange={e => setForm({ ...form, name: e.target.value })}
                     placeholder="e.g. create_github_issue"
-                    className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-none focus:border-accent transition-colors"
+                    className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-hidden focus:border-accent transition-colors"
                   />
                 </div>
 
@@ -403,7 +403,7 @@ export default function Tools() {
                     onChange={e => setForm({ ...form, description: e.target.value })}
                     placeholder="What does this tool do?"
                     rows={2}
-                    className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-none focus:border-accent transition-colors"
+                    className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-hidden focus:border-accent transition-colors"
                   />
                 </div>
 
@@ -414,7 +414,7 @@ export default function Tools() {
                     <select
                       value={form.implementationType}
                       onChange={e => setForm({ ...form, implementationType: e.target.value as ToolImplementationType })}
-                      className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-none focus:border-accent transition-colors"
+                      className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-hidden focus:border-accent transition-colors"
                     >
                       {TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
@@ -424,7 +424,7 @@ export default function Tools() {
                     <select
                       value={form.requiredPermission}
                       onChange={e => setForm({ ...form, requiredPermission: e.target.value as PermissionLevel })}
-                      className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-none focus:border-accent transition-colors"
+                      className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-hidden focus:border-accent transition-colors"
                     >
                       {PERMISSION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
@@ -439,7 +439,7 @@ export default function Tools() {
                       value={form.nativeHandler}
                       onChange={e => setForm({ ...form, nativeHandler: e.target.value })}
                       placeholder="e.g. vigilus.tools.native.docker:docker_list"
-                      className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-none focus:border-accent transition-colors font-mono"
+                      className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-hidden focus:border-accent transition-colors font-mono"
                     />
                   </div>
                 )}
@@ -453,7 +453,7 @@ export default function Tools() {
                         <select
                           value={form.httpMethod}
                           onChange={e => setForm({ ...form, httpMethod: e.target.value })}
-                          className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-none focus:border-accent transition-colors"
+                          className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-hidden focus:border-accent transition-colors"
                         >
                           <option value="GET">GET</option>
                           <option value="POST">POST</option>
@@ -469,7 +469,7 @@ export default function Tools() {
                           value={form.httpUrl}
                           onChange={e => setForm({ ...form, httpUrl: e.target.value })}
                           placeholder="https://api.example.com/v1/resource"
-                          className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-none focus:border-accent transition-colors"
+                          className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-hidden focus:border-accent transition-colors"
                         />
                       </div>
                     </div>
@@ -481,7 +481,7 @@ export default function Tools() {
                         onChange={e => setForm({ ...form, httpHeaders: e.target.value })}
                         placeholder='{"Authorization": "Bearer token"}'
                         rows={3}
-                        className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-none focus:border-accent transition-colors font-mono"
+                        className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-hidden focus:border-accent transition-colors font-mono"
                       />
                     </div>
 
@@ -492,7 +492,7 @@ export default function Tools() {
                         onChange={e => setForm({ ...form, httpBodyTemplate: e.target.value })}
                         placeholder="Use {{variables}} to map tool inputs"
                         rows={3}
-                        className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-none focus:border-accent transition-colors font-mono"
+                        className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-hidden focus:border-accent transition-colors font-mono"
                       />
                     </div>
                   </>
@@ -505,7 +505,7 @@ export default function Tools() {
                     value={form.inputSchema}
                     onChange={e => setForm({ ...form, inputSchema: e.target.value })}
                     rows={4}
-                    className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-none focus:border-accent transition-colors font-mono"
+                    className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-hidden focus:border-accent transition-colors font-mono"
                   />
                 </div>
 
@@ -536,7 +536,7 @@ export default function Tools() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 text-[13px] font-medium rounded-md bg-accent text-white hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center"
+                  className="px-4 py-2 text-[13px] font-medium rounded-md bg-accent text-white hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-xs flex items-center"
                 >
                   {submitting ? 'Saving...' : editingId ? 'Save Changes' : 'Create Tool'}
                 </button>

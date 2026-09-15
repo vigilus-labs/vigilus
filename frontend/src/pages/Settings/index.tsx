@@ -260,7 +260,7 @@ function ProvidersTab() {
                             setOrDropdownOpen(true);
                           }}
                           placeholder="Search models..."
-                          className="w-full pl-7 pr-3 py-2 text-[13px] bg-white border border-border rounded-l-md focus:outline-none focus:border-accent"
+                          className="w-full pl-7 pr-3 py-2 text-[13px] bg-white border border-border rounded-l-md focus:outline-hidden focus:border-accent"
                         />
                       </div>
                       <button
@@ -1499,7 +1499,7 @@ export default function Settings() {
 
         {/* Settings Content */}
         <div className="flex-1">
-          <div className="bg-white border border-border rounded-card shadow-sm p-6">
+          <div className="bg-white border border-border rounded-card shadow-xs p-6">
             <h2 className="text-lg font-medium text-text-primary mb-4 border-b border-border pb-4">
               {activeTab === 'providers' && 'LLM Providers'}
               {activeTab === 'credentials' && 'Credentials'}

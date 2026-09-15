@@ -200,7 +200,7 @@ export function NodeDetail({
                 onChange={(e) => setRoleLabel(e.target.value)}
                 onBlur={() => persistRole(roles, roleLabel)}
                 placeholder="Display label (optional)"
-                className="mt-2 w-full px-2.5 py-1.5 text-[12px] rounded-md border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                className="mt-2 w-full px-2.5 py-1.5 text-[12px] rounded-md border border-border bg-surface text-text-primary focus:outline-hidden focus:ring-1 focus:ring-accent"
               />
             </section>
           )}

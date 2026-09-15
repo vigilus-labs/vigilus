@@ -201,7 +201,7 @@ export function InventoryTable({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter by IP, host, OS, service…"
-            className="w-full pl-8 pr-2 py-1.5 text-[13px] bg-bg border border-border rounded-md text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent"
+            className="w-full pl-8 pr-2 py-1.5 text-[13px] bg-bg border border-border rounded-md text-text-primary placeholder:text-text-secondary focus:outline-hidden focus:border-accent"
           />
         </div>
         <span className="text-[11px] text-text-secondary">

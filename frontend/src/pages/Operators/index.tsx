@@ -253,7 +253,7 @@ export default function Operators() {
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center px-3 py-1.5 text-[13px] font-medium rounded-md bg-accent text-white hover:bg-accent-hover transition-colors shadow-sm"
+          className="flex items-center px-3 py-1.5 text-[13px] font-medium rounded-md bg-accent text-white hover:bg-accent-hover transition-colors shadow-xs"
         >
           <Plus className="w-4 h-4 mr-1.5" />
           Create Operator
@@ -281,7 +281,7 @@ export default function Operators() {
             const defModel = providers.find(p => p.id === op.provider_id)?.default_model;
             const modelLabel = op.model ?? (defModel ? `Default (${defModel})` : 'Provider default');
             return (
-            <div key={op.id} className="border border-border dark:border-border rounded-card bg-white dark:bg-surface overflow-hidden flex flex-col transition-shadow hover:shadow-sm">
+            <div key={op.id} className="border border-border dark:border-border rounded-card bg-white dark:bg-surface overflow-hidden flex flex-col transition-shadow hover:shadow-xs">
               <div
                 role="button"
                 tabIndex={0}
