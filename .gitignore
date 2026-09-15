@@ -50,6 +50,9 @@ htmlcov/
 # Self-update bookkeeping (mtime marks when the last update was applied)
 .update-stamp
 
+# Update-time package caches (pip/npm) for installs whose service user has no HOME
+.cache/
+
 # Claude Code
 CLAUDE.md
 *_IMPLEMENTATION_PLAN.md

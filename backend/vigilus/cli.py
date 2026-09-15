@@ -343,12 +343,48 @@ def _service_restart_plan(platform: str | None = None, exists=os.path.exists):
     return None
 
 
+def _update_env(root) -> dict[str, str]:
+    """Environment for update subprocesses with a writable package cache.
+
+    System installs create the service user with ``--no-create-home``, so its
+    HOME may not exist: pip then disables its cache (warning) and npm fails
+    outright (EACCES creating ``~/.npm``). Point both at a cache directory
+    inside the — by definition writable — install root instead.
+    """
+    from pathlib import Path
+
+    cache = Path(root) / ".cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ)
+    env["XDG_CACHE_HOME"] = str(cache)
+    env["npm_config_cache"] = str(cache / "npm")
+    return env
+
+
+def _tree_owner(root) -> int | None:
+    """UID owning the install tree, or None if it can't be determined."""
+    try:
+        return os.stat(root).st_uid
+    except OSError:
+        return None
+
+
+def _user_name(uid: int) -> str:
+    try:
+        import pwd
+
+        return pwd.getpwuid(uid).pw_name
+    except (ImportError, KeyError):
+        return f"uid-{uid}"
+
+
 def _update_backend_deps(backend_dir) -> None:
     import subprocess
 
     print("Installing backend dependencies...")
     res = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--quiet", "-e", str(backend_dir)]
+        [sys.executable, "-m", "pip", "install", "--quiet", "-e", str(backend_dir)],
+        env=_update_env(backend_dir.parent),
     )
     if res.returncode != 0:
         print("ERROR: backend dependency install failed (see output above).", file=sys.stderr)
@@ -371,8 +407,11 @@ def _rebuild_frontend(frontend_dir) -> None:
         )
         return
     print("Building frontend...")
-    for step in (["install", "--silent"], ["run", "build", "--silent"]):
-        res = subprocess.run([npm, "--prefix", str(frontend_dir), *step])
+    env = _update_env(frontend_dir.parent)
+    # No --silent: install failures must print their actual error (they are
+    # swallowed otherwise, leaving only a generic 'build failed').
+    for step in (["install"], ["run", "build", "--silent"]):
+        res = subprocess.run([npm, "--prefix", str(frontend_dir), *step], env=env)
         if res.returncode != 0:
             print("ERROR: frontend build failed (see output above).", file=sys.stderr)
             sys.exit(1)
@@ -536,6 +575,20 @@ def cmd_update(args: argparse.Namespace) -> None:
             "ERROR: this Vigilus install is not managed by git, so it can't self-update.\n"
             "  - Docker: pull the newer image and recreate the container.\n"
             "  - Manual checkout: git pull, then re-run install.sh.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Ownership pre-flight: running as anyone other than the tree owner
+    # (root included) corrupts ownership mid-update — git/pip/npm then write
+    # files the service user can't manage, and later updates fail oddly.
+    owner = _tree_owner(root)
+    if owner is not None and hasattr(os, "geteuid") and os.geteuid() != owner:
+        print(
+            f"ERROR: this install belongs to '{_user_name(owner)}' but you are running as "
+            f"'{_user_name(os.geteuid())}'. Running as a different user corrupts file "
+            "ownership. Run it as the owner instead:\n"
+            f"  sudo -u {_user_name(owner)} vigilus update",
             file=sys.stderr,
         )
         sys.exit(1)
