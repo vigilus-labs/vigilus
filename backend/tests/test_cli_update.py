@@ -161,6 +161,30 @@ def test_non_git_install_fails_with_guidance(tmp_path, monkeypatch, capsys):
     assert "can't self-update" in capsys.readouterr().err
 
 
+def test_update_refuses_to_run_as_wrong_user(repos, monkeypatch, capsys):
+    """Running as anyone but the tree owner (root included) corrupts ownership."""
+    origin, install, calls = repos
+    monkeypatch.setattr(cli, "_tree_owner", lambda root: 4242)
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+
+    with pytest.raises(SystemExit):
+        cli.cmd_update(_args())
+
+    err = capsys.readouterr().err
+    assert "belongs to" in err
+    assert "sudo -u" in err
+    assert calls == []  # nothing ran
+
+
+def test_update_env_redirects_package_caches_into_install(tmp_path):
+    """Service users may have no HOME; caches must live in the install tree."""
+    env = cli._update_env(tmp_path)
+
+    assert env["XDG_CACHE_HOME"] == str(tmp_path / ".cache")
+    assert env["npm_config_cache"] == str(tmp_path / ".cache" / "npm")
+    assert (tmp_path / ".cache").is_dir()
+
+
 # ── service restart detection ────────────────────────────────────────────
 
 

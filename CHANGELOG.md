@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `vigilus update` failed during the frontend rebuild on system installs:
+  the service user has no home directory, so npm died with EACCES creating
+  its cache. Update subprocesses now keep their pip/npm caches inside the
+  install tree, and `npm install` is no longer run with `--silent` (its
+  errors were invisible)
+- `vigilus update` refuses to run as a user other than the install's owner
+  (root included) with the exact `sudo -u <owner>` command — mixing users
+  corrupts file ownership mid-update
 - `vigilus update` no longer reports success (exit 0) when the service
   restart fails: it retries via `sudo` for interactive users and exits 1
   with a clear error if the running service is still the old version
