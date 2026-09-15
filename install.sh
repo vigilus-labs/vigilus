@@ -516,6 +516,23 @@ _setup_service_system_systemd() {
     # Grant ownership of the install dir to the service user
     $SUDO chown -R vigilus:vigilus "$INSTALL_DIR"
 
+    # Let the service user restart exactly its own unit — needed by in-app
+    # self-updates. The unit sets NoNewPrivileges=true, which blocks sudo, so
+    # polkit is the mechanism (plain 'systemctl restart vigilus' by vigilus).
+    if [ -d /etc/polkit-1/rules.d ]; then
+        $SUDO tee /etc/polkit-1/rules.d/49-vigilus-update.rules >/dev/null <<'PKTEOF'
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        subject.user == "vigilus" &&
+        action.lookup("unit") == "vigilus.service") {
+        return polkit.Result.YES;
+    }
+});
+PKTEOF
+    else
+        warn "polkit not found — in-app updates will apply but need a manual 'sudo systemctl restart vigilus'"
+    fi
+
     $SUDO tee "$SERVICE_FILE" >/dev/null << SVCEOF
 [Unit]
 Description=Vigilus AI Infrastructure Platform

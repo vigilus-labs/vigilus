@@ -358,6 +358,15 @@ export interface UpdateStatus {
   error: string | null;
 }
 
+export interface UpdateJob {
+  state: 'idle' | 'running' | 'done' | 'error';
+  started_at: number | null;
+  finished_at: number | null;
+  exit_code: number | null;
+  output: string[];
+  can_self_update: boolean;
+}
+
 // ─── WebSocket Events ─────────────────────────────────────────────────────────
 
 export type WsEventType =

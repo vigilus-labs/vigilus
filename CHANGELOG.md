@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- In-app self-update: **Settings → About → Update now** runs the same update
+  as `vigilus update` from the web UI, with live progress and automatic
+  reconnect across the service restart (git-managed installs only)
+- `install.sh` now installs a polkit rule so the service user can restart
+  exactly its own unit — required for in-app updates to restart the service
+
+### Fixed
+
+- `vigilus update` no longer reports success (exit 0) when the service
+  restart fails: it retries via `sudo` for interactive users and exits 1
+  with a clear error if the running service is still the old version
+
 ## [0.3.0] - 2026-09-15
 
 ### Changed

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +35,33 @@ async def update_check() -> dict:
     from vigilus.core.updates import get_update_status
 
     return await get_update_status(force=True)
+
+
+@router.get("/system/update/job")
+async def update_job() -> dict:
+    """State of the current/last in-app self-update job (idle when none)."""
+    from vigilus.core.selfupdate import get_job
+
+    return get_job()
+
+
+@router.post("/system/update/run")
+async def run_update() -> dict:
+    """Trigger a self-update (git-managed installs only) as a background job.
+
+    Follow progress via GET /system/update/job. On success the service
+    restarts as the final step, so this endpoint's connection — and the
+    process serving it — may go away before the job finishes.
+    """
+    from vigilus.core.selfupdate import start_update
+
+    try:
+        return start_update()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=409 if "already running" in str(exc) else 400,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get("/system/status")
