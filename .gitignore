@@ -47,6 +47,9 @@ htmlcov/
 # Logs
 *.log
 
+# Self-update bookkeeping (mtime marks when the last update was applied)
+.update-stamp
+
 # Claude Code
 CLAUDE.md
 *_IMPLEMENTATION_PLAN.md
