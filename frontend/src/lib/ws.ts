@@ -22,7 +22,7 @@ export function useVigilusEvents({ events, enabled = true }: UseVigilusEventsOpt
   const wsRef = useRef<WebSocket | null>(null);
   const eventsRef = useRef(events);
   const retryCountRef = useRef(0);
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Keep callbacks ref in sync without re-connecting
   eventsRef.current = events;

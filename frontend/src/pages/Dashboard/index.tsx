@@ -77,7 +77,7 @@ export default function Dashboard() {
 
       {/* Metrics Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="p-5 border border-border dark:border-border rounded-card bg-white dark:bg-surface shadow-sm flex items-center justify-between group">
+        <div className="p-5 border border-border dark:border-border rounded-card bg-white dark:bg-surface shadow-xs flex items-center justify-between group">
           <div>
             <p className="text-[12px] font-medium text-text-secondary uppercase tracking-wider mb-1">Active Operators</p>
             <h2 className="text-[28px] font-semibold text-text-primary dark:text-text-primary leading-none">
@@ -89,7 +89,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="p-5 border border-border dark:border-border rounded-card bg-white dark:bg-surface shadow-sm flex items-center justify-between group">
+        <div className="p-5 border border-border dark:border-border rounded-card bg-white dark:bg-surface shadow-xs flex items-center justify-between group">
           <div>
             <p className="text-[12px] font-medium text-text-secondary uppercase tracking-wider mb-1">Pending JIT</p>
             <h2 className="text-[28px] font-semibold text-text-primary dark:text-text-primary leading-none">
@@ -101,7 +101,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="p-5 border border-border dark:border-border rounded-card bg-white dark:bg-surface shadow-sm flex items-center justify-between group">
+        <div className="p-5 border border-border dark:border-border rounded-card bg-white dark:bg-surface shadow-xs flex items-center justify-between group">
           <div>
             <p className="text-[12px] font-medium text-text-secondary uppercase tracking-wider mb-1">Failed Actions (24h)</p>
             <h2 className="text-[28px] font-semibold text-text-primary dark:text-text-primary leading-none">
@@ -113,7 +113,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="p-5 border border-border dark:border-border rounded-card bg-white dark:bg-surface shadow-sm flex items-center justify-between group">
+        <div className="p-5 border border-border dark:border-border rounded-card bg-white dark:bg-surface shadow-xs flex items-center justify-between group">
           <div>
             <p className="text-[12px] font-medium text-text-secondary uppercase tracking-wider mb-1">Total Actions</p>
             <h2 className="text-[28px] font-semibold text-text-primary dark:text-text-primary leading-none">

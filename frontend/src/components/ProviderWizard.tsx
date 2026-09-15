@@ -197,7 +197,7 @@ export function ProviderWizard({ onClose, onComplete }: Props) {
                 <input
                   value={displayName}
                   onChange={e => setDisplayName(e.target.value)}
-                  className="w-full px-3 py-2 text-[13px] rounded-lg border border-border dark:border-border bg-white dark:bg-surface text-text-primary dark:text-text-primary focus:border-accent focus:ring-1 focus:ring-accent outline-none"
+                  className="w-full px-3 py-2 text-[13px] rounded-lg border border-border dark:border-border bg-white dark:bg-surface text-text-primary dark:text-text-primary focus:border-accent focus:ring-1 focus:ring-accent outline-hidden"
                 />
               </div>
 
@@ -209,7 +209,7 @@ export function ProviderWizard({ onClose, onComplete }: Props) {
                     value={apiKey}
                     onChange={e => setApiKey(e.target.value)}
                     placeholder={`Paste your ${selected.label} API key`}
-                    className="w-full px-3 py-2 text-[13px] rounded-lg border border-border dark:border-border bg-white dark:bg-surface text-text-primary dark:text-text-primary placeholder:text-text-secondary/40 focus:border-accent focus:ring-1 focus:ring-accent outline-none"
+                    className="w-full px-3 py-2 text-[13px] rounded-lg border border-border dark:border-border bg-white dark:bg-surface text-text-primary dark:text-text-primary placeholder:text-text-secondary/40 focus:border-accent focus:ring-1 focus:ring-accent outline-hidden"
                     autoFocus
                   />
                   {selected.key_url && (
@@ -232,7 +232,7 @@ export function ProviderWizard({ onClose, onComplete }: Props) {
                     value={baseUrl}
                     onChange={e => setBaseUrl(e.target.value)}
                     placeholder={selected.base_url ?? 'https://...'}
-                    className="w-full px-3 py-2 text-[13px] rounded-lg border border-border dark:border-border bg-white dark:bg-surface text-text-primary dark:text-text-primary placeholder:text-text-secondary/40 focus:border-accent focus:ring-1 focus:ring-accent outline-none"
+                    className="w-full px-3 py-2 text-[13px] rounded-lg border border-border dark:border-border bg-white dark:bg-surface text-text-primary dark:text-text-primary placeholder:text-text-secondary/40 focus:border-accent focus:ring-1 focus:ring-accent outline-hidden"
                   />
                 </div>
               )}

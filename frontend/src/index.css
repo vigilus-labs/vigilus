@@ -1,52 +1,102 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss' source(none);
+
+@source './';
+
+/* Tailwind v4: class-based dark mode (was `darkMode: 'class'` in tailwind.config.js) */
+@custom-variant dark (&:where(.dark, .dark *));
 
 /*
  * Vigilus palette — adopted from vigilus.dev (warm bronze/gold + cream).
- * Values are "R G B" triplets so Tailwind's rgb(var() / <alpha-value>) opacity
- * modifiers work. Light is the default; .dark overrides.
+ * Values are "R G B" triplets; the @theme inline block below wires them into
+ * Tailwind color tokens, so opacity modifiers (e.g. bg-accent/10) compose via
+ * color-mix while staying switchable at runtime. Light is the default; .dark
+ * overrides.
  */
 :root {
-  --color-accent: 139 105 20;          /* #8B6914 */
-  --color-accent-hover: 164 123 26;    /* #A47B1A */
-  --color-accent-active: 109 82 15;    /* #6D520F */
-  --color-bg: 250 246 240;             /* #FAF6F0 */
-  --color-surface: 242 235 225;        /* #F2EBE1 */
-  --color-border: 221 211 196;         /* #DDD3C4 */
-  --color-text-primary: 45 48 50;      /* #2D3032 */
-  --color-text-secondary: 107 101 96;  /* #6B6560 */
-  --color-success: 22 163 74;          /* #16A34A */
-  --color-warning: 202 138 4;          /* #CA8A04 */
-  --color-danger: 220 38 38;           /* #DC2626 */
-  --color-info: 37 99 235;             /* #2563EB */
+  --accent: 139 105 20;          /* #8B6914 */
+  --accent-hover: 164 123 26;    /* #A47B1A */
+  --accent-active: 109 82 15;    /* #6D520F */
+  --bg: 250 246 240;             /* #FAF6F0 */
+  --surface: 242 235 225;        /* #F2EBE1 */
+  --border: 221 211 196;         /* #DDD3C4 */
+  --text-primary: 45 48 50;      /* #2D3032 */
+  --text-secondary: 107 101 96;  /* #6B6560 */
+  --success: 22 163 74;          /* #16A34A */
+  --warning: 202 138 4;          /* #CA8A04 */
+  --danger: 220 38 38;           /* #DC2626 */
+  --info: 37 99 235;             /* #2563EB */
 
   /* Chart series palette (Scope graphs). Overridden in .dark below. */
-  --chart-1: 139 105 20;               /* accent gold */
-  --chart-2: 22 163 74;                /* success green */
-  --chart-3: 202 138 4;                /* warning amber */
-  --chart-4: 220 38 38;                /* danger red */
-  --chart-5: 37 99 235;                /* info blue */
-  --chart-6: 124 58 237;               /* violet */
+  --chart-1: 139 105 20;         /* accent gold */
+  --chart-2: 22 163 74;          /* success green */
+  --chart-3: 202 138 4;          /* warning amber */
+  --chart-4: 220 38 38;          /* danger red */
+  --chart-5: 37 99 235;          /* info blue */
+  --chart-6: 124 58 237;         /* violet */
 }
 
 .dark {
-  --color-accent: 196 154 98;          /* #C49A62 */
-  --color-accent-hover: 212 170 114;   /* #D4AA72 */
-  --color-accent-active: 160 120 64;   /* #A07840 */
-  --color-bg: 26 28 29;                /* #1A1C1D */
-  --color-surface: 38 41 41;           /* #262929 */
-  --color-border: 61 64 66;            /* #3D4042 */
-  --color-text-primary: 232 220 200;   /* #E8DCC8 */
-  --color-text-secondary: 168 158 144; /* #A89E90 */
+  --accent: 196 154 98;          /* #C49A62 */
+  --accent-hover: 212 170 114;   /* #D4AA72 */
+  --accent-active: 160 120 64;   /* #A07840 */
+  --bg: 26 28 29;                /* #1A1C1D */
+  --surface: 38 41 41;           /* #262929 */
+  --border: 61 64 66;            /* #3D4042 */
+  --text-primary: 232 220 200;   /* #E8DCC8 */
+  --text-secondary: 168 158 144; /* #A89E90 */
 
   /* Chart series palette — brightened for dark backgrounds. */
-  --chart-1: 196 154 98;               /* accent gold */
-  --chart-2: 34 197 94;                /* green */
-  --chart-3: 234 179 8;                /* amber */
-  --chart-4: 248 113 113;              /* red */
-  --chart-5: 96 165 250;               /* blue */
-  --chart-6: 167 139 250;              /* violet */
+  --chart-1: 196 154 98;         /* accent gold */
+  --chart-2: 34 197 94;          /* green */
+  --chart-3: 234 179 8;          /* amber */
+  --chart-4: 248 113 113;        /* red */
+  --chart-5: 96 165 250;         /* blue */
+  --chart-6: 167 139 250;        /* violet */
+}
+
+/*
+ * Tailwind v4 theme tokens (was tailwind.config.js). `inline` inlines the
+ * token value into each utility, so classes reference the runtime CSS
+ * variables above instead of build-time copies — that keeps the .dark
+ * overrides working. v3's <alpha-value> slot is replaced by color-mix.
+ */
+@theme inline {
+  --color-accent: rgb(var(--accent));
+  --color-accent-hover: rgb(var(--accent-hover));
+  --color-accent-active: rgb(var(--accent-active));
+  --color-bg: rgb(var(--bg));
+  --color-surface: rgb(var(--surface));
+  --color-border: rgb(var(--border));
+  --color-text-primary: rgb(var(--text-primary));
+  --color-text-secondary: rgb(var(--text-secondary));
+  --color-success: rgb(var(--success));
+  --color-warning: rgb(var(--warning));
+  --color-danger: rgb(var(--danger));
+  --color-info: rgb(var(--info));
+  --color-chart-1: rgb(var(--chart-1));
+  --color-chart-2: rgb(var(--chart-2));
+  --color-chart-3: rgb(var(--chart-3));
+  --color-chart-4: rgb(var(--chart-4));
+  --color-chart-5: rgb(var(--chart-5));
+  --color-chart-6: rgb(var(--chart-6));
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+
+  --radius: 6px; /* bare `rounded` */
+  --radius-card: 8px; /* `rounded-card` */
+
+  --animate-toast-in: toast-in 150ms ease-out;
+
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
 }
 
 @layer base {
@@ -61,7 +111,7 @@
 
   /* Focus ring */
   *:focus-visible {
-    @apply outline-none ring-2 ring-accent/30 ring-offset-1;
+    @apply outline-hidden ring-2 ring-accent/30 ring-offset-1;
   }
 }
 
@@ -90,6 +140,6 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgb(var(--color-border));
+  background: rgb(var(--border));
   border-radius: 3px;
 }

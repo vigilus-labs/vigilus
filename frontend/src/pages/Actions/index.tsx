@@ -85,7 +85,7 @@ export default function Actions() {
             <select
               value={outcomeFilter}
               onChange={e => setOutcomeFilter(e.target.value)}
-              className="px-3 py-1.5 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-none focus:border-accent transition-colors"
+              className="px-3 py-1.5 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:outline-hidden focus:border-accent transition-colors"
             >
               <option value="all">All Outcomes</option>
               <option value="success">Success</option>

@@ -81,7 +81,7 @@ export function SegmentEditor({
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="e.g. VLAN 10 — IoT"
-              className="mt-1 w-full px-2.5 py-1.5 text-[13px] rounded-md border border-border bg-bg text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+              className="mt-1 w-full px-2.5 py-1.5 text-[13px] rounded-md border border-border bg-bg text-text-primary focus:outline-hidden focus:ring-1 focus:ring-accent"
             />
           </label>
 
