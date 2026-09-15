@@ -270,6 +270,13 @@ toggle *Respond in groups* for that platform. Slash commands (`/help`,
 - **Strict**: a denied tool call **pauses the whole delegation** while a JIT approval card appears inline in the chat (and on the JIT page). Approve and the operator continues automatically; deny and it aborts that action. The wait window is `VIGILUS_JIT_WAIT_SECONDS` (default 180).
 - **Lenient**: the same requests are auto-approved and execution continues immediately — still fully logged.
 
+## AI-Assisted Development
+
+AI tools are used to assist with the development of Vigilus. Regardless, the
+codebase is continuously scanned by [Aikido](https://www.aikido.dev) — every
+pull request runs a security check — and reported vulnerabilities are
+addressed before release.
+
 ## Contributing
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for local
