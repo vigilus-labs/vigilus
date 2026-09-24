@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import io
+import threading
+import time
 from typing import Any
 
 import paramiko
@@ -178,6 +180,10 @@ async def ssh_exec(
 
     logger.info("ssh_exec", hostname=hostname, command=command[:80])
 
+    # Set when the awaiting turn is cancelled so the worker thread drops the
+    # connection instead of running on detached until the timeout.
+    stop = threading.Event()
+
     def _run():
         client = None
         try:
@@ -191,12 +197,12 @@ async def ssh_exec(
                 passphrase=passphrase,
             )
             stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
-            exit_code = stdout.channel.recv_exit_status()
+            exit_code, out, err = _collect_output(stdout, stderr, timeout, stop)
             return {
                 "server": server_id or hostname,
                 "command": command,
-                "stdout": stdout.read().decode("utf-8", errors="replace"),
-                "stderr": stderr.read().decode("utf-8", errors="replace"),
+                "stdout": out.decode("utf-8", errors="replace"),
+                "stderr": err.decode("utf-8", errors="replace"),
                 "exit_code": exit_code,
             }
         except Exception as e:
@@ -205,7 +211,37 @@ async def ssh_exec(
             if client:
                 client.close()
 
-    return await asyncio.to_thread(_run)
+    try:
+        return await asyncio.to_thread(_run)
+    except asyncio.CancelledError:
+        stop.set()
+        raise
+
+
+def _collect_output(stdout, stderr, timeout, stop: threading.Event) -> tuple[int, bytes, bytes]:
+    """Wait for a remote command to exit, draining its output as it arrives.
+
+    ``recv_exit_status()`` blocks with no timeout, so a command that never
+    exits (``tail -f``, a password prompt) would hang the call forever. Output
+    is drained while polling so a chatty command cannot stall on a full SSH
+    window either. Raises TimeoutError past *timeout* seconds.
+    """
+    channel = stdout.channel
+    deadline = time.monotonic() + timeout
+    out, err = bytearray(), bytearray()
+    while not channel.exit_status_ready():
+        while channel.recv_ready():
+            out += channel.recv(32768)
+        while channel.recv_stderr_ready():
+            err += channel.recv_stderr(32768)
+        if stop.is_set():
+            raise RuntimeError("Command cancelled")
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"Command timed out after {timeout}s")
+        stop.wait(0.05)
+    out += stdout.read()
+    err += stderr.read()
+    return channel.recv_exit_status(), bytes(out), bytes(err)
 
 
 def _ssh_connect_sync(

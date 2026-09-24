@@ -14,6 +14,7 @@ import structlog
 from sqlalchemy import select
 
 from vigilus.core.rbac import Permission, PolicyEngine
+from vigilus.core.tasks import TaskCancelled, await_cancelled
 from vigilus.db.base import get_session_factory
 from vigilus.db.models import Action, ActionOutcome, Operator, Tool, ToolImplementationType
 
@@ -263,7 +264,7 @@ class ToolRegistry:
                     except (ValueError, TypeError):
                         pass
 
-                    res = await handler_func(**call_kwargs)
+                    res = await await_cancelled(handler_func(**call_kwargs), cancel_event)
                     # Handlers should return a dict; serialize to string for LLM
                     if isinstance(res, dict):
                         result_obj = ToolResult(
@@ -273,14 +274,26 @@ class ToolRegistry:
                         result_obj = ToolResult(success=True, output=str(res))
 
                 elif tool.implementation_type == ToolImplementationType.http:
-                    result_obj = await self._execute_http(tool, arguments)
+                    result_obj = await await_cancelled(
+                        self._execute_http(tool, arguments), cancel_event
+                    )
 
                 elif tool.implementation_type == ToolImplementationType.mcp:
-                    result_obj = await self._execute_mcp(tool, arguments)
+                    result_obj = await await_cancelled(
+                        self._execute_mcp(tool, arguments), cancel_event
+                    )
 
                 else:
                     raise ValueError(f"Unknown implementation type: {tool.implementation_type}")
 
+            except TaskCancelled:
+                # The stopped handler may have left the shared session mid-query;
+                # discard its uncommitted work before recording the outcome.
+                logger.info("tool_execution_cancelled", tool=tool.name, session_id=session_id)
+                await db.rollback()
+                result_obj = ToolResult(
+                    success=False, error="Task cancelled while the tool was running."
+                )
             except Exception as e:
                 logger.exception("tool_execution_failed", tool=tool.name, error=str(e))
                 result_obj = ToolResult(success=False, error=str(e))

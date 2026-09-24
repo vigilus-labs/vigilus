@@ -329,3 +329,122 @@ async def test_running_task_detail_includes_usage(db_session, async_client):
         assert row["tokens_out"] == 60
     finally:
         registry.unregister(session_id, task.id)
+
+
+# ── Stalled tool calls must not outlive a cancel request ──────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cancel_interrupts_hung_tool_call(db_session, monkeypatch):
+    """A tool that never returns must not keep its turn "running" after cancel."""
+    from vigilus.db.models import (
+        Operator,
+        PermissionLevel,
+        Tool,
+        ToolImplementationType,
+        TrustMode,
+    )
+    from vigilus.tools.registry import ToolRegistry
+
+    op = Operator(
+        name="Hung Tool Operator",
+        description="test",
+        permission_level=PermissionLevel.exec,
+        trust_mode=TrustMode.strict,
+    )
+    tool = Tool(
+        name="hung_tool",
+        description="never returns",
+        implementation_type=ToolImplementationType.native,
+        required_permission=PermissionLevel.read,
+        native_handler="hung_tool",
+        input_schema={"type": "object", "properties": {}},
+    )
+    db_session.add_all([op, tool])
+    await db_session.commit()
+    await db_session.refresh(op)
+
+    started = asyncio.Event()
+    handler_cancelled = asyncio.Event()
+
+    async def hung_handler(arguments, operator):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            handler_cancelled.set()
+            raise
+
+    registry = ToolRegistry()
+    monkeypatch.setattr(registry, "_get_native_handler", lambda _path: hung_handler)
+
+    cancel_event = asyncio.Event()
+    call = asyncio.create_task(
+        registry.execute(tool.name, {}, operator=op, cancel_event=cancel_event)
+    )
+    await asyncio.wait_for(started.wait(), timeout=5)
+    cancel_event.set()
+
+    result = await asyncio.wait_for(call, timeout=5)
+    assert result.success is False
+    assert "cancelled" in (result.error or "").lower()
+    assert handler_cancelled.is_set()
+
+
+@pytest.mark.asyncio
+async def test_ssh_exec_times_out_when_command_never_exits(monkeypatch):
+    """A remote command that never exits (tail -f, a prompt) must honour timeout."""
+    import threading
+    import time
+
+    from vigilus.tools.native import ssh
+
+    released = threading.Event()
+
+    class _NeverExitsChannel:
+        def recv_ready(self):
+            return False
+
+        def recv_stderr_ready(self):
+            return False
+
+        def exit_status_ready(self):
+            return False
+
+        def recv_exit_status(self):
+            # Blocks like paramiko does for a command that never exits; bounded
+            # here only so a regression fails the test instead of hanging it.
+            released.wait(10)
+            return -1
+
+        def close(self):
+            released.set()
+
+    class _Stream:
+        def __init__(self, channel):
+            self.channel = channel
+
+        def read(self):
+            return b""
+
+    class _FakeClient:
+        def __init__(self):
+            self.channel = _NeverExitsChannel()
+
+        def exec_command(self, command, timeout=None):
+            return None, _Stream(self.channel), _Stream(self.channel)
+
+        def close(self):
+            released.set()
+
+    monkeypatch.setattr(ssh, "_ssh_connect_sync", lambda *a, **kw: _FakeClient())
+
+    started = time.monotonic()
+    result = await asyncio.wait_for(
+        ssh.ssh_exec({"host": "example.test", "command": "tail -f /var/log/x", "timeout": 1}),
+        timeout=15,
+    )
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 5, f"ssh_exec ignored its 1s timeout (took {elapsed:.1f}s)"
+    assert "timed out" in (result.get("error") or "").lower()
