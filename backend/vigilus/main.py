@@ -90,9 +90,9 @@ async def lifespan(app: FastAPI):
         await run_seed(session)
 
     # Warn (non-blocking) if the DB is stamped behind the latest migration.
-    # create_all (above) adds missing tables but never adds columns to existing
-    # tables, so a schema-drifted DB fails at query time with a cryptic
-    # "no such column" — this turns that silent drift into a clear log line.
+    # init_db (above) upgrades stamped DBs or refuses to start, so this is a
+    # safety net: a schema-drifted DB would otherwise fail at query time with a
+    # cryptic "no such column" — this turns that into a clear log line.
     try:
         from vigilus.core.preflight import check_migration_status
 
@@ -124,6 +124,12 @@ async def lifespan(app: FastAPI):
         if result.rowcount:
             logger.info("startup.cleared_orphaned_actions", count=result.rowcount)
         await session.commit()
+
+    # Scheduled tasks stuck 'running' belong to a run that died mid-flight —
+    # reset them so the Tasks page reflects reality and "Run now" works again.
+    from vigilus.core.scheduler import recover_stale_running_tasks
+
+    await recover_stale_running_tasks()
 
     # Start the cron scheduler for recurring tasks
     from vigilus.core.scheduler import get_scheduler

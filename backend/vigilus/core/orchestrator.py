@@ -50,6 +50,11 @@ class OrchestratorConfig:
     # schedules and to display run times. Defaults to UTC.
     timezone: str = "UTC"
 
+    # Platform-wide monthly LLM spend cap in USD. None/0 = no budget. When the
+    # month's metered spend reaches this, new LLM calls are stopped until the
+    # budget is raised or the month resets (core/budget.py).
+    monthly_budget_usd: float | None = None
+
     # Keep system_prompt as a read-only convenience for the API endpoint
     # (returns the rendered prompt).  Not persisted — rebuilt by PromptBuilder.
     system_prompt: str = ""
@@ -61,17 +66,26 @@ class OrchestratorConfig:
             "custom_identity": self.custom_identity,
             "soul": self.soul,
             "timezone": self.timezone,
+            "monthly_budget_usd": self.monthly_budget_usd,
             "system_prompt": self.system_prompt,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> OrchestratorConfig:
+        budget = data.get("monthly_budget_usd")
+        try:
+            budget = float(budget) if budget is not None else None
+        except (TypeError, ValueError):
+            budget = None
+        if budget is not None and budget <= 0:
+            budget = None
         return cls(
             provider_id=data.get("provider_id"),
             model=data.get("model"),
             custom_identity=data.get("custom_identity"),
             soul=data.get("soul"),
             timezone=data.get("timezone") or "UTC",
+            monthly_budget_usd=budget,
             system_prompt=data.get("system_prompt", ""),
         )
 

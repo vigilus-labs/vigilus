@@ -185,6 +185,18 @@ async def handle_inbound(inbound: InboundMessage, adapter: ChannelAdapter) -> No
             return
 
         # 5. Run the orchestrator turn with a live status indicator.
+        # One turn at a time per session — a second message arriving while a
+        # turn is still running would interleave history, so politely decline.
+        from vigilus.core.tasks import get_task_registry
+
+        if get_task_registry().get(session.id) is not None:
+            await adapter.send(
+                inbound.chat_id,
+                "⏳ I'm still working on your previous message — I'll be ready "
+                "for the next one when it finishes.",
+            )
+            return
+
         status = _StatusController(adapter, inbound.chat_id)
         bridge = status.bridge()
 

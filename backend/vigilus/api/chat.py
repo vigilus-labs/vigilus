@@ -346,6 +346,18 @@ async def _run_orchestrator(
                 bridge.publish(EVT_ERROR, {"error": "Task cancelled by user."})
             break
 
+        # Budget hard stop: once the monthly LLM spend cap is reached, no
+        # further provider calls are made — report the stop instead.
+        from vigilus.core.budget import turn_budget_stop
+
+        budget_stop = await turn_budget_stop(db)
+        if budget_stop:
+            logger.warning("orchestrator.budget_stop", session_id=session_id)
+            new_messages.append({"role": "assistant", "content": budget_stop})
+            if bridge:
+                bridge.publish(EVT_ERROR, {"error": budget_stop})
+            break
+
         logger.info("orchestrator.iteration", iteration=iteration)
 
         if bridge:
@@ -751,6 +763,16 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
     session = await db.get(Session, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    # One turn at a time per session: a second message while a turn is still
+    # running would interleave history and cancel state. 409 tells the client
+    # to wait (or cancel the running turn) first.
+    if get_task_registry().get(session.id) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="A task is already running in this session — wait for it to "
+            "finish or cancel it before sending another message.",
+        )
 
     # ── Resolve orchestrator provider ──────────────────────
     orch_cfg = load_orchestrator_config()

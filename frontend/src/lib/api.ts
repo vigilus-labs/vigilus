@@ -63,6 +63,7 @@ export interface OrchestratorConfig {
   custom_identity?: string | null;
   soul?: string | null;
   timezone?: string;
+  monthly_budget_usd?: number | null;
 }
 
 export interface OrchestratorConfigUpdate {
@@ -72,6 +73,7 @@ export interface OrchestratorConfigUpdate {
   custom_identity?: string | null;
   soul?: string | null;
   timezone?: string;
+  monthly_budget_usd?: number | null;
 }
 
 // ─── Fetch wrapper ────────────────────────────────────────────────────────────

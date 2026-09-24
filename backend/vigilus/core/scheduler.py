@@ -46,6 +46,74 @@ def next_fire_time(expression: str, tz: ZoneInfo | None = None) -> datetime | No
         return None
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Treat naive timestamps (SQLite round-trips) as UTC."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def missed_fire(
+    task: ScheduledTask, *, now: datetime | None = None, tz: ZoneInfo | None = None
+) -> bool:
+    """Whether at least one scheduled fire for *task* was missed (e.g. the
+    backend was down at fire time). A fire only counts as missed when it falls
+    after the task's last activity — its last run, or its creation for tasks
+    that never ran — so a restart never replays work that already happened,
+    and at most one catch-up run is owed no matter how many fires were skipped.
+    """
+    tz = tz or get_app_timezone()
+    try:
+        trigger = CronTrigger.from_crontab(task.cron_expression, timezone=tz)
+    except (ValueError, TypeError):
+        return False
+
+    now = _as_utc(now) if now is not None else datetime.now(UTC)
+    anchor = task.last_run_at or task.created_at
+    if anchor is None:
+        return False  # never ran and creation time unknown — don't guess
+    anchor = _as_utc(anchor)
+    if anchor >= now:
+        return False
+
+    # First fire strictly after the last activity; missed iff it already
+    # came due. Works with APScheduler 3's get_next_fire_time: given a
+    # "previous" time it returns the first fire after that instant.
+    next_after_anchor = trigger.get_next_fire_time(anchor, now)
+    return next_after_anchor is not None and next_after_anchor <= now
+
+
+async def recover_stale_running_tasks() -> int:
+    """Reset ScheduledTask rows left 'running' by a crash or restart.
+
+    Without this, a task that died mid-run stays 'running' forever and the
+    manual "Run now" button refuses with 409. Returns how many rows were
+    reset. Called once during startup, before the scheduler loads tasks.
+    """
+    from sqlalchemy import select
+
+    factory = get_session_factory()
+    async with factory() as db:
+        stale = (
+            (await db.execute(select(ScheduledTask).where(ScheduledTask.last_status == "running")))
+            .scalars()
+            .all()
+        )
+        for task in stale:
+            task.last_status = "error"
+            task.last_result = {
+                **(task.last_result or {}),
+                "status": "error",
+                "error": "Interrupted — backend restarted mid-run",
+            }
+        if stale:
+            await db.commit()
+            logger.info(
+                "scheduler.recovered_stale_tasks",
+                count=len(stale),
+                names=[t.name for t in stale],
+            )
+        return len(stale)
+
+
 async def _deliver_to_channel(deliver_to: dict | None, summary: str, *, name: str) -> None:
     """Push a scheduled task summary to a channel chat via the gateway.
 
@@ -274,7 +342,10 @@ class SchedulerEngine:
         await self._load_enabled_tasks()
 
     async def _load_enabled_tasks(self) -> None:
-        """Register every enabled task and recompute its next-run time."""
+        """Register every enabled task, recompute its next-run time, and catch
+        up (once, coalesced) on any fire missed while the backend was down."""
+        import asyncio
+
         from sqlalchemy import select
 
         tz = get_app_timezone()
@@ -289,10 +360,26 @@ class SchedulerEngine:
                 .scalars()
                 .all()
             )
+            owed_catch_up: list[ScheduledTask] = []
             for task in tasks:
                 self._register(task)
                 task.next_run_at = next_fire_time(task.cron_expression, tz)
+                if missed_fire(task, tz=tz):
+                    owed_catch_up.append(task)
             await db.commit()
+
+        if owed_catch_up:
+            # Run each missed task once, regardless of how many fires were
+            # skipped (a cron that fires every 5 minutes doesn't owe 2,016
+            # runs after a week of downtime). These go through the exact same
+            # execute path as scheduled fires, so results land on the Tasks
+            # page like any other run.
+            logger.info(
+                "scheduler.catch_up",
+                tasks=[t.name for t in owed_catch_up],
+            )
+            for task in owed_catch_up:
+                asyncio.create_task(execute_scheduled_task(task.id))
 
         logger.info("scheduler.loaded", task_count=len(tasks), timezone=str(tz))
 
