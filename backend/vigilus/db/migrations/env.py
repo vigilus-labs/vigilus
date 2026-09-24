@@ -21,8 +21,9 @@ from vigilus.db.base import Base  # noqa: E402
 # Alembic Config object
 config = context.config
 
-# Set up loggers from the config file
-if config.config_file_name is not None:
+# Set up loggers from the config file — but not when init_db() runs us inside
+# the server on its own connection: fileConfig would disable the app's loggers.
+if config.config_file_name is not None and "connection" not in config.attributes:
     fileConfig(config.config_file_name)
 
 # MetaData for autogenerate
@@ -98,7 +99,16 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode with an async engine."""
+    """Run migrations in 'online' mode with an async engine.
+
+    init_db() passes its own sync connection via config.attributes; the caller
+    owns that connection's transaction, and asyncio.run() can't be called from
+    inside the server's running event loop.
+    """
+    connection = config.attributes.get("connection")
+    if connection is not None:
+        do_run_migrations(connection)
+        return
     asyncio.run(run_async_migrations())
 
 

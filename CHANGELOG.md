@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- SQLite now runs in WAL mode with an explicit 5s busy timeout, so the
+  scheduler, gateway, JIT polling, audit writes and chat can write
+  concurrently without "database is locked" errors
+- Startup now applies pending Alembic migrations to an existing database
+  instead of running `create_all` (which never adds new columns). If the
+  schema can't be migrated, the server refuses to start with a clear message
+  rather than failing later with "no such column"
+
 ## [0.3.2] - 2026-09-15
 
 ## [0.3.1] - 2026-09-15
