@@ -752,6 +752,16 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # One turn at a time per session: a second message while a turn is still
+    # running would interleave history and cancel state. 409 tells the client
+    # to wait (or cancel the running turn) first.
+    if get_task_registry().get(session.id) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="A task is already running in this session — wait for it to "
+            "finish or cancel it before sending another message.",
+        )
+
     # ── Resolve orchestrator provider ──────────────────────
     orch_cfg = load_orchestrator_config()
     try:

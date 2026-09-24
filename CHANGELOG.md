@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of running `create_all` (which never adds new columns). If the
   schema can't be migrated, the server refuses to start with a clear message
   rather than failing later with "no such column"
+- Sending another message to a chat session while a turn is still running
+  now fails fast with a clear 409 instead of letting the two turns
+  interleave and corrupt each other's history; the Telegram/Discord gateway
+  likewise replies with a "still working" notice instead of starting a
+  second concurrent turn in the same conversation
 
 ## [0.3.2] - 2026-09-15
 
