@@ -125,6 +125,12 @@ async def lifespan(app: FastAPI):
             logger.info("startup.cleared_orphaned_actions", count=result.rowcount)
         await session.commit()
 
+    # Scheduled tasks stuck 'running' belong to a run that died mid-flight —
+    # reset them so the Tasks page reflects reality and "Run now" works again.
+    from vigilus.core.scheduler import recover_stale_running_tasks
+
+    await recover_stale_running_tasks()
+
     # Start the cron scheduler for recurring tasks
     from vigilus.core.scheduler import get_scheduler
 

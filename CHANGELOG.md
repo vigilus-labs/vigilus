@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conversations alike. The Usage page shows each cap with spend-to-date and
   turns amber at 80%; operators pause with a clear notice instead of
   silently running up the bill
+- Scheduled-task catch-up: a task whose cron fire was missed while the
+  backend was down runs once (coalesced) at startup, and a restart never
+  replays runs that already happened or fires that predate the task
 
 ### Fixed
 
@@ -25,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of running `create_all` (which never adds new columns). If the
   schema can't be migrated, the server refuses to start with a clear message
   rather than failing later with "no such column"
+- Scheduled tasks left in "running" by a crash or restart are reset at
+  startup with an "Interrupted — backend restarted mid-run" result, so the
+  Tasks page reflects reality and "Run now" works again
 - Sending another message to a chat session while a turn is still running
   now fails fast with a clear 409 instead of letting the two turns
   interleave and corrupt each other's history; the Telegram/Discord gateway
