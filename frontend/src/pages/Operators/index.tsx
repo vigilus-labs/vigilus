@@ -18,6 +18,7 @@ const EMPTY_FORM = {
   permission: 'read' as PermissionLevel,
   trustMode: 'inherit' as TrustMode,
   workingDir: '/tmp',
+  monthlyBudget: '',
   selectedTools: [] as string[],
   enabled: true,
 };
@@ -146,6 +147,7 @@ export default function Operators() {
       permission: op.permission_level,
       trustMode: op.trust_mode,
       workingDir: op.working_dir ?? '/tmp',
+      monthlyBudget: op.monthly_budget_usd != null ? String(op.monthly_budget_usd) : '',
       selectedTools: op.tool_ids,
       enabled: op.enabled,
     });
@@ -163,6 +165,15 @@ export default function Operators() {
     // Override off → store null so the operator follows its provider's default
     // model at runtime (resolved by OperatorRuntime), rather than pinning it.
     const effectiveModel = form.modelOverride ? (form.model.trim() || null) : null;
+    const trimmedBudget = form.monthlyBudget.trim();
+    let monthlyBudgetUsd: number | null = null;
+    if (trimmedBudget !== '') {
+      monthlyBudgetUsd = parseFloat(trimmedBudget);
+      if (Number.isNaN(monthlyBudgetUsd) || monthlyBudgetUsd < 0) {
+        toast('Monthly budget must be zero or a positive number', 'error');
+        return;
+      }
+    }
     try {
       if (editingId) {
         await api.updateOperator(editingId, {
@@ -172,6 +183,7 @@ export default function Operators() {
           soul: form.soul,
           provider_id: form.providerId || undefined,
           model: effectiveModel,
+          monthly_budget_usd: monthlyBudgetUsd,
           permission_level: form.permission,
           trust_mode: form.trustMode,
           working_dir: form.workingDir || null,
@@ -187,6 +199,7 @@ export default function Operators() {
           soul: form.soul || null,
           provider_id: form.providerId,
           model: effectiveModel,
+          monthly_budget_usd: monthlyBudgetUsd,
           permission_level: form.permission,
           trust_mode: form.trustMode,
           working_dir: form.workingDir,
@@ -579,6 +592,22 @@ export default function Operators() {
                       placeholder="/tmp"
                       className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:border-accent font-mono"
                     />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[12px] font-medium text-text-secondary uppercase tracking-wider">Monthly Budget (USD)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={form.monthlyBudget}
+                      onChange={e => setForm({ ...form, monthlyBudget: e.target.value })}
+                      placeholder="No cap"
+                      className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:border-accent"
+                    />
+                    <p className="text-[11px] text-text-secondary/70">
+                      Stops this operator's LLM calls when its month-to-date estimated spend
+                      reaches the cap.
+                    </p>
                   </div>
                   {editingId && (
                     <div className="space-y-1.5 flex items-end pb-2">

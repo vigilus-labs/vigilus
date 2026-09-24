@@ -45,6 +45,7 @@ def _to_response(op: Operator) -> OperatorResponse:
         permission_level=op.permission_level.value,
         trust_mode=op.trust_mode.value,
         working_dir=op.working_dir,
+        monthly_budget_usd=op.monthly_budget_usd,
         is_builtin=op.is_builtin,
         delegatable=op.delegatable,
         enabled=op.enabled,
@@ -99,6 +100,7 @@ async def create_operator(data: OperatorCreate, db: AsyncSession = Depends(get_d
         permission_level=data.permission_level,
         trust_mode=data.trust_mode,
         working_dir=data.working_dir,
+        monthly_budget_usd=data.monthly_budget_usd,
         icon=data.icon,
     )
     db.add(op)
@@ -155,6 +157,10 @@ async def update_operator(
         op.trust_mode = data.trust_mode
     if data.working_dir is not None:
         op.working_dir = data.working_dir
+    # Monthly budget: an explicit null clears the cap, so follow the same
+    # fields_set pattern the model override uses.
+    if "monthly_budget_usd" in data.model_fields_set:
+        op.monthly_budget_usd = data.monthly_budget_usd or None
     if data.enabled is not None:
         op.enabled = data.enabled
     if data.icon is not None:

@@ -1535,6 +1535,8 @@ function AboutSection() {
 function GeneralTab() {
   const toast = useToast();
   const [timezone, setTimezone] = useState('UTC');
+  const [budget, setBudget] = useState('');
+  const [savingBudget, setSavingBudget] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const zones = listTimezones();
@@ -1542,7 +1544,10 @@ function GeneralTab() {
   useEffect(() => {
     api
       .getOrchestratorConfig()
-      .then((cfg) => setTimezone(cfg.timezone || 'UTC'))
+      .then((cfg) => {
+        setTimezone(cfg.timezone || 'UTC');
+        setBudget(cfg.monthly_budget_usd != null ? String(cfg.monthly_budget_usd) : '');
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -1557,6 +1562,32 @@ function GeneralTab() {
       toast(`Failed to update timezone: ${(err as Error).message}`, 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveBudget = async () => {
+    const trimmed = budget.trim();
+    if (trimmed === '') {
+      await applyBudget(null);
+      return;
+    }
+    const value = parseFloat(trimmed);
+    if (Number.isNaN(value) || value < 0) {
+      toast('Monthly budget must be zero or a positive number', 'error');
+      return;
+    }
+    await applyBudget(value);
+  };
+
+  const applyBudget = async (value: number | null) => {
+    setSavingBudget(true);
+    try {
+      await api.updateOrchestratorConfig({ monthly_budget_usd: value });
+      toast(value ? 'Monthly budget updated' : 'Monthly budget cleared', 'success');
+    } catch (err) {
+      toast(`Failed to update budget: ${(err as Error).message}`, 'error');
+    } finally {
+      setSavingBudget(false);
     }
   };
 
@@ -1580,6 +1611,38 @@ function GeneralTab() {
         <p className="text-[12px] text-text-secondary">
           Used to interpret scheduled task cron expressions and to display run times.
           Changing it reschedules all tasks.
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-[12px] font-medium text-text-secondary uppercase">
+          Monthly LLM budget (USD)
+        </label>
+        <div className="flex gap-2">
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={budget}
+            onChange={(e) => setBudget(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveBudget(); } }}
+            placeholder="No cap"
+            disabled={savingBudget}
+            className="input w-full"
+          />
+          <button
+            type="button"
+            onClick={saveBudget}
+            disabled={savingBudget}
+            className="btn-primary shrink-0 text-[12px] disabled:opacity-50"
+          >
+            {savingBudget ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        <p className="text-[12px] text-text-secondary">
+          Platform-wide cap on estimated LLM spend per calendar month, covering Vigilus and
+          every Operator. Once the cap is hit, new LLM calls pause until it's raised or the
+          month resets. Individual Operators can have tighter caps on their own settings.
         </p>
       </div>
 

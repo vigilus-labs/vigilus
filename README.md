@@ -23,6 +23,7 @@ A web dashboard + conversational AI + MCP server manager + user-definable agent 
 - **Scheduled Tasks** — Create recurring tasks in the UI (cron-based, with presets); each run is sent to the orchestrator and produces a reviewable chat session
 - **Server Inventory** — Manage homelab hosts with encrypted SSH credentials and connectivity testing
 - **Multi-Provider LLM Support** — Anthropic, OpenAI, Google, Ollama, LM Studio, vLLM, OpenRouter, xAI, and any OpenAI-compatible endpoint
+- **Cost Budgets** — Platform-wide monthly LLM budget plus per-Operator caps; when a cap is hit, LLM calls pause until it's raised or the month resets
 - **Real-Time Dashboard** — WebSocket-driven live updates across the entire UI
 
 ## Quick Start

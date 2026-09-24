@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { BarChart3, Bot, Coins, Cpu, Sparkles } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { UsageByActor, UsageSummary, UsageWindow } from '@/types';
+import type { UsageByActor, UsageBudget, UsageSummary, UsageWindow } from '@/types';
 import { UsageOverTime } from './charts/UsageOverTime';
 import { formatCost, formatTokens, percentOf } from './format';
 
@@ -74,6 +74,65 @@ function Panel({
 
 function isOrchestrator(row: UsageByActor): boolean {
   return row.actor_type === 'orchestrator';
+}
+
+function BudgetBar({ label, limit, spent }: { label: string; limit: number; spent: number }) {
+  const ratio = limit > 0 ? spent / limit : 0;
+  const over = spent >= limit;
+  const warn = !over && ratio >= 0.8;
+  const tone = over ? 'bg-danger' : warn ? 'bg-amber-500' : 'bg-accent';
+  return (
+    <div className="mb-3 last:mb-0">
+      <div className="flex items-baseline justify-between gap-3 mb-1">
+        <span className="text-sm text-text-primary truncate">{label}</span>
+        <span
+          className={cn(
+            'text-[12px] whitespace-nowrap',
+            over ? 'text-danger font-medium' : 'text-text-secondary'
+          )}
+        >
+          {formatCost(spent)} / {formatCost(limit)} · {(ratio * 100).toFixed(0)}%
+        </span>
+      </div>
+      <div className="h-2 w-full rounded-full bg-border/50 overflow-hidden">
+        <div
+          className={cn('h-full rounded-full transition-all', tone)}
+          style={{ width: `${Math.max(ratio * 100, spent > 0 ? 2 : 0)}%` }}
+        />
+      </div>
+      {over && (
+        <p className="text-[11px] text-danger mt-1">
+          Cap reached — new LLM calls for this scope pause until the budget is raised.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function BudgetPanel({ budget }: { budget: UsageBudget }) {
+  const hasGlobal = budget.monthly_limit_usd != null;
+  if (!hasGlobal && budget.operators.length === 0) return null;
+  return (
+    <Panel
+      title="Monthly budget"
+      subtitle="Calendar-month estimated spend against configured caps."
+    >
+      {hasGlobal && (
+        <BudgetBar
+          label="Vigilus (platform-wide)"
+          limit={budget.monthly_limit_usd ?? 0}
+          spent={budget.month_spent_usd}
+        />
+      )}
+      {budget.operators.map((o) => (
+        <BudgetBar key={o.operator_id} label={o.name} limit={o.limit_usd} spent={o.spent_usd} />
+      ))}
+      <p className="text-[11px] text-text-secondary mt-3">
+        Set the platform-wide cap in Settings → General; give individual Operators tighter
+        caps in their own settings.
+      </p>
+    </Panel>
+  );
 }
 
 export default function Usage() {
@@ -183,6 +242,8 @@ export default function Usage() {
               color="bg-chart-2/10 text-chart-2"
             />
           </div>
+
+          <BudgetPanel budget={data.budget} />
 
           <UsageOverTime data={data.series} window={usageWindow as UsageWindow} />
 

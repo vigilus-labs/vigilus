@@ -46,10 +46,26 @@ class UsageSeriesPoint(BaseModel):
     estimated_cost_usd: float | None
 
 
+class UsageBudgetOperator(BaseModel):
+    operator_id: str
+    name: str
+    limit_usd: float
+    spent_usd: float
+    exceeded: bool
+
+
+class UsageBudget(BaseModel):
+    monthly_limit_usd: float | None
+    month_spent_usd: float
+    percent_used: float | None
+    operators: list[UsageBudgetOperator]
+
+
 class UsageSummaryResponse(BaseModel):
     window: str
     cost_incomplete: bool
     totals: UsageTotals
+    budget: UsageBudget
     by_actor: list[UsageByActor]
     by_provider: list[UsageByProvider]
     by_model: list[UsageByModel]

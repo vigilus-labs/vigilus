@@ -23,6 +23,7 @@ class OperatorCreate(BaseModel):
     permission_level: PermissionLevel = PermissionLevel.read
     trust_mode: TrustMode = TrustMode.inherit
     working_dir: str | None = None
+    monthly_budget_usd: float | None = Field(None, ge=0)
     is_builtin: bool = False
     delegatable: bool = True
     enabled: bool = True
@@ -51,6 +52,7 @@ class OperatorUpdate(BaseModel):
     permission_level: PermissionLevel | None = None
     trust_mode: TrustMode | None = None
     working_dir: str | None = None
+    monthly_budget_usd: float | None = Field(None, ge=0)
     delegatable: bool | None = None
     enabled: bool | None = None
     icon: str | None = None
@@ -79,6 +81,7 @@ class OperatorResponse(BaseModel):
     permission_level: PermissionLevel
     trust_mode: TrustMode
     working_dir: str | None = None
+    monthly_budget_usd: float | None = None
     is_builtin: bool = False
     delegatable: bool = True
     enabled: bool = True
@@ -102,6 +105,7 @@ class OperatorResponse(BaseModel):
             permission_level=operator.permission_level,
             trust_mode=operator.trust_mode,
             working_dir=operator.working_dir,
+            monthly_budget_usd=operator.monthly_budget_usd,
             is_builtin=operator.is_builtin,
             delegatable=operator.delegatable,
             enabled=operator.enabled,

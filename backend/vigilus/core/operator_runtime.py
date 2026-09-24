@@ -160,6 +160,27 @@ class OperatorRuntime:
                 logger.info("operator.cancelled", operator=self.operator.name)
                 break
 
+            # Budget hard stop: the platform-wide cap and this operator's own
+            # cap (if set) both apply. Stopping here means no provider call is
+            # made; the notice becomes the delegation report so the
+            # orchestrator can wrap up gracefully.
+            from vigilus.core.budget import turn_budget_stop
+            from vigilus.db.base import get_session_factory
+
+            budget_factory = get_session_factory()
+            async with budget_factory() as budget_db:
+                budget_stop = await turn_budget_stop(budget_db, operator=self.operator)
+            if budget_stop:
+                logger.warning("operator.budget_stop", operator=self.operator.name)
+                messages.append(LLMMessage(role="assistant", content=budget_stop))
+                tool_history.append({"budget_stop": True})
+                if bridge:
+                    bridge.publish(
+                        "budget_stop",
+                        {"operator": self.operator.name},
+                    )
+                break
+
             # Live progress for the Tasks page / operator drawer.
             if session_id:
                 get_task_registry().update(

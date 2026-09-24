@@ -60,6 +60,7 @@ export interface Operator {
   description: string;
   provider_id: string | null;
   model: string | null;
+  monthly_budget_usd?: number | null;
   system_prompt: string | null;
   soul: string | null;
   trust_mode: TrustMode;
@@ -221,6 +222,7 @@ export interface CreateOperator {
   soul?: string | null;
   provider_id?: string | null;
   model?: string | null;
+  monthly_budget_usd?: number | null;
   permission_level?: PermissionLevel;
   trust_mode?: TrustMode;
   working_dir?: string | null;
@@ -235,6 +237,7 @@ export interface UpdateOperator {
   soul?: string | null;
   provider_id?: string | null;
   model?: string | null;
+  monthly_budget_usd?: number | null;
   permission_level?: PermissionLevel;
   trust_mode?: TrustMode;
   working_dir?: string | null;
@@ -754,10 +757,26 @@ export interface UsageSeriesPoint {
   estimated_cost_usd: number | null;
 }
 
+export interface UsageBudgetOperator {
+  operator_id: string;
+  name: string;
+  limit_usd: number;
+  spent_usd: number;
+  exceeded: boolean;
+}
+
+export interface UsageBudget {
+  monthly_limit_usd: number | null;
+  month_spent_usd: number;
+  percent_used: number | null;
+  operators: UsageBudgetOperator[];
+}
+
 export interface UsageSummary {
   window: UsageWindow | string;
   cost_incomplete: boolean;
   totals: UsageTotals;
+  budget: UsageBudget;
   by_actor: UsageByActor[];
   by_provider: UsageByProvider[];
   by_model: UsageByModel[];

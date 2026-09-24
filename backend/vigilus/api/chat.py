@@ -346,6 +346,18 @@ async def _run_orchestrator(
                 bridge.publish(EVT_ERROR, {"error": "Task cancelled by user."})
             break
 
+        # Budget hard stop: once the monthly LLM spend cap is reached, no
+        # further provider calls are made — report the stop instead.
+        from vigilus.core.budget import turn_budget_stop
+
+        budget_stop = await turn_budget_stop(db)
+        if budget_stop:
+            logger.warning("orchestrator.budget_stop", session_id=session_id)
+            new_messages.append({"role": "assistant", "content": budget_stop})
+            if bridge:
+                bridge.publish(EVT_ERROR, {"error": budget_stop})
+            break
+
         logger.info("orchestrator.iteration", iteration=iteration)
 
         if bridge:

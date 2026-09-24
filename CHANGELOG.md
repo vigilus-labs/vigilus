@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Monthly LLM cost budgets: a platform-wide cap (Settings → General) plus
+  optional per-Operator caps stop new LLM calls once the calendar month's
+  estimated spend reaches the limit — in chat, scheduled tasks, and channel
+  conversations alike. The Usage page shows each cap with spend-to-date and
+  turns amber at 80%; operators pause with a clear notice instead of
+  silently running up the bill
+
 ### Fixed
 
 - SQLite now runs in WAL mode with an explicit 5s busy timeout, so the

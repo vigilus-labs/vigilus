@@ -23,6 +23,7 @@ class OrchestratorConfigResponse(BaseModel):
     custom_identity: str | None = None
     soul: str | None = None
     timezone: str = "UTC"
+    monthly_budget_usd: float | None = None
 
 
 class OrchestratorConfigUpdate(BaseModel):
@@ -32,6 +33,7 @@ class OrchestratorConfigUpdate(BaseModel):
     custom_identity: str | None = None
     soul: str | None = None
     timezone: str | None = None
+    monthly_budget_usd: float | None = None
 
 
 @router.get("", response_model=OrchestratorConfigResponse)
@@ -80,6 +82,14 @@ async def update_orchestrator_config(
             raise HTTPException(status_code=422, detail=f"Invalid timezone: {tz}")
         tz_changed = tz != cfg.timezone
         cfg.timezone = tz
+
+    # Monthly budget: a positive float sets the cap, 0/null clears it.
+    if "monthly_budget_usd" in data.model_fields_set:
+        if data.monthly_budget_usd is not None and data.monthly_budget_usd < 0:
+            raise HTTPException(
+                status_code=422, detail="monthly_budget_usd must be zero or positive"
+            )
+        cfg.monthly_budget_usd = data.monthly_budget_usd or None
 
     # system_prompt is now built dynamically — accept but store as custom_identity
     # if the user explicitly sets it via the old API field.

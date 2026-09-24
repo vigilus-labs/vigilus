@@ -5,6 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from vigilus.core.budget import build_budget_block
 from vigilus.core.llm_usage import get_usage_summary
 from vigilus.db.base import get_db
 from vigilus.schemas.usage import UsageSummaryResponse
@@ -20,4 +21,5 @@ async def get_usage(
     db: AsyncSession = Depends(get_db),
 ):
     data = await get_usage_summary(db, window)
+    data["budget"] = await build_budget_block(db)
     return UsageSummaryResponse.model_validate(data)

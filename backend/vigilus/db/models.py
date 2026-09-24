@@ -192,6 +192,9 @@ class Operator(Base):
     soul = Column(Text, nullable=True)
     provider_id = Column(String(36), ForeignKey("providers.id"), nullable=True)
     model = Column(String(255), nullable=True)
+    # Monthly LLM spend cap in USD for this operator. None = no per-operator
+    # limit (the platform-wide budget, if any, still applies).
+    monthly_budget_usd = Column(Float, nullable=True)
     permission_level = Column(Enum(PermissionLevel), nullable=False, default=PermissionLevel.read)
     trust_mode = Column(Enum(TrustMode), nullable=False, default=TrustMode.inherit)
     working_dir = Column(String(1024), nullable=True)
