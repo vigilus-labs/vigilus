@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     # Default tool-calling rounds for an operator. A per-operator
     # max_iterations column overrides this when set.
     operator_max_iterations: int = Field(default=10, ge=1)
+    # How many scheduled tasks may run at once on the scheduler leader.
+    schedule_max_concurrent: int = Field(default=2, ge=1)
 
     # ── CORS ────────────────────────────────────────────────
     cors_origins: list[str] = ["http://localhost:5173"]

@@ -12,7 +12,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vigilus.core.compressor import ContextCompressor
+from vigilus.core.compressor import ContextCompressor, resolve_context_window
 from vigilus.core.orchestrator import (
     load_orchestrator_config,
     resolve_orchestrator_provider,
@@ -84,7 +84,11 @@ async def run_turn(
     )
     llm_history = _load_db_messages_as_llm(list(rows))
 
-    compressor = ContextCompressor(provider=provider, model=model)
+    compressor = ContextCompressor(
+        provider=provider,
+        model=model,
+        max_tokens=resolve_context_window(provider_row, model),
+    )
     llm_history, summary = await compressor.compress_if_needed(
         llm_history, system_tokens=len(system_prompt) // 4
     )

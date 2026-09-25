@@ -34,6 +34,8 @@ class ScheduleCreate(BaseModel):
     task_prompt: str = Field(min_length=1)
     operator_id: str | None = None
     enabled: bool = True
+    max_attempts: int = Field(default=1, ge=1)
+    retry_backoff_seconds: int = Field(default=30, ge=0)
 
 
 class ScheduleUpdate(BaseModel):
@@ -43,6 +45,8 @@ class ScheduleUpdate(BaseModel):
     task_prompt: str | None = None
     operator_id: str | None = None
     enabled: bool | None = None
+    max_attempts: int | None = Field(default=None, ge=1)
+    retry_backoff_seconds: int | None = Field(default=None, ge=0)
 
 
 class ScheduleResponse(BaseModel):
@@ -57,6 +61,8 @@ class ScheduleResponse(BaseModel):
     next_run_at: datetime | None
     last_status: str | None
     last_result: dict | None
+    max_attempts: int = 1
+    retry_backoff_seconds: int = 30
     run_count: int
     created_at: datetime
     updated_at: datetime
@@ -75,6 +81,10 @@ def _to_response(task: ScheduledTask) -> ScheduleResponse:
         next_run_at=task.next_run_at,
         last_status=task.last_status,
         last_result=task.last_result,
+        max_attempts=task.max_attempts or 1,
+        retry_backoff_seconds=(
+            task.retry_backoff_seconds if task.retry_backoff_seconds is not None else 30
+        ),
         run_count=task.run_count or 0,
         created_at=task.created_at,
         updated_at=task.updated_at,
@@ -124,6 +134,8 @@ async def create_schedule(data: ScheduleCreate, db: AsyncSession = Depends(get_d
         task_prompt=data.task_prompt,
         operator_id=data.operator_id,
         enabled=data.enabled,
+        max_attempts=data.max_attempts,
+        retry_backoff_seconds=data.retry_backoff_seconds,
         next_run_at=next_fire_time(data.cron_expression) if data.enabled else None,
     )
     db.add(task)
@@ -166,6 +178,10 @@ async def update_schedule(task_id: str, data: ScheduleUpdate, db: AsyncSession =
         task.task_prompt = data.task_prompt
     if data.enabled is not None:
         task.enabled = data.enabled
+    if data.max_attempts is not None:
+        task.max_attempts = data.max_attempts
+    if data.retry_backoff_seconds is not None:
+        task.retry_backoff_seconds = data.retry_backoff_seconds
 
     task.next_run_at = next_fire_time(task.cron_expression) if task.enabled else None
     await db.commit()

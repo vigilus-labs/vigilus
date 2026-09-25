@@ -17,6 +17,7 @@ PROVIDER_CATALOG: list[dict] = [
         "base_url": None,
         "key_url": "https://console.anthropic.com/settings/keys",
         "default_model": "claude-opus-4-8",
+        "context_window": 200_000,
     },
     {
         "id": "openai",
@@ -27,6 +28,7 @@ PROVIDER_CATALOG: list[dict] = [
         "base_url": None,
         "key_url": "https://platform.openai.com/api-keys",
         "default_model": "gpt-4o",
+        "context_window": 128_000,
     },
     {
         "id": "openrouter",
@@ -37,6 +39,7 @@ PROVIDER_CATALOG: list[dict] = [
         "base_url": None,
         "key_url": "https://openrouter.ai/settings/keys",
         "default_model": "openrouter/auto",
+        "context_window": None,
     },
     {
         "id": "google",
@@ -47,6 +50,7 @@ PROVIDER_CATALOG: list[dict] = [
         "base_url": None,
         "key_url": "https://aistudio.google.com/apikey",
         "default_model": "gemini-2.5-pro",
+        "context_window": 1_000_000,
     },
     {
         "id": "ollama",
@@ -57,6 +61,7 @@ PROVIDER_CATALOG: list[dict] = [
         "base_url": "http://localhost:11434/v1",
         "key_url": None,
         "default_model": None,
+        "context_window": 8_192,
     },
     {
         "id": "custom",
@@ -67,5 +72,6 @@ PROVIDER_CATALOG: list[dict] = [
         "base_url": None,
         "key_url": None,
         "default_model": None,
+        "context_window": None,
     },
 ]

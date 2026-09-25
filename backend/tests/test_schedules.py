@@ -239,6 +239,76 @@ class TestMissedFireRecovery:
         engine.shutdown_sync()
 
 
+class TestSchedulerSafety:
+    async def test_only_one_holder_owns_the_lease(self, db_session):
+        from vigilus.core.scheduler import try_acquire_or_renew
+        from vigilus.db.models import SchedulerLease
+
+        assert await try_acquire_or_renew("holder-a", ttl_seconds=30) is True
+        assert await try_acquire_or_renew("holder-b", ttl_seconds=30) is False
+
+        row = await db_session.get(SchedulerLease, "leader")
+        assert row is not None
+        row.expires_at = datetime.now(UTC) - timedelta(seconds=5)
+        await db_session.commit()
+
+        assert await try_acquire_or_renew("holder-b", ttl_seconds=30) is True
+
+    async def test_record_misfire_is_visible_on_the_task(self, db_session):
+        from vigilus.core.scheduler import record_misfire
+
+        task = ScheduledTask(
+            name="late-task",
+            cron_expression="0 8 * * *",
+            task_prompt="check in",
+            enabled=True,
+        )
+        db_session.add(task)
+        await db_session.commit()
+
+        await record_misfire(task.id)
+        await db_session.refresh(task)
+        assert task.last_status == "misfired"
+        assert "5 minutes" in task.last_result["error"]
+
+    async def test_failed_run_retries_then_succeeds(self, db_session, monkeypatch):
+        from vigilus.core.scheduler import execute_scheduled_task
+
+        task = ScheduledTask(
+            name="retry-task",
+            cron_expression="0 8 * * *",
+            task_prompt="check in",
+            enabled=True,
+            max_attempts=2,
+            retry_backoff_seconds=30,
+        )
+        db_session.add(task)
+        await db_session.commit()
+
+        calls: list[bool] = []
+
+        async def fake_run_turn(*_args, **kwargs):
+            calls.append(kwargs.get("save_user_message", True))
+            if len(calls) == 1:
+                raise RuntimeError("upstream blip")
+            return "recovered"
+
+        async def no_sleep(_delay):
+            return None
+
+        monkeypatch.setattr("vigilus.core.turn.run_turn", fake_run_turn)
+        monkeypatch.setattr("vigilus.core.scheduler.asyncio.sleep", no_sleep)
+
+        result = await execute_scheduled_task(task.id)
+        await db_session.refresh(task)
+
+        assert result["status"] == "success"
+        assert result["attempt"] == 2
+        assert calls == [True, False]
+        assert task.last_status == "success"
+        assert task.run_count == 1
+
+
 class SchedulerEngineWithStub:
     """SchedulerEngine wired to a stub job store so tests don't need a live
     AsyncIOScheduler — only the catch-up side effects under test."""

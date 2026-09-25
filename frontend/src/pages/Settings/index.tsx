@@ -19,6 +19,7 @@ interface ProviderFormState {
   base_url: string;
   api_key: string;
   default_model: string;
+  context_window: string;
   enabled: boolean;
 }
 
@@ -28,6 +29,7 @@ const emptyForm: ProviderFormState = {
   base_url: '',
   api_key: '',
   default_model: '',
+  context_window: '',
   enabled: true,
 };
 
@@ -120,6 +122,7 @@ function ProvidersTab() {
       base_url: p.type === 'openrouter' ? '' : (p.base_url ?? ''),
       api_key: '',
       default_model: p.default_model ?? '',
+      context_window: p.context_window != null ? String(p.context_window) : '',
       enabled: p.enabled,
     });
     setEditingId(p.id);
@@ -134,10 +137,21 @@ function ProvidersTab() {
     e.preventDefault();
     setSaving(true);
     try {
+      const trimmedWindow = form.context_window.trim();
+      let contextWindow: number | null = null;
+      if (trimmedWindow) {
+        contextWindow = Number(trimmedWindow);
+        if (!Number.isInteger(contextWindow) || contextWindow < 1) {
+          toast('Context window must be a positive number of tokens, or left blank.', 'error');
+          setSaving(false);
+          return;
+        }
+      }
       const payload: Record<string, any> = {
         name: form.name,
         type: form.type,
         default_model: form.default_model || null,
+        context_window: contextWindow,
         enabled: form.enabled,
       };
       // OpenRouter doesn't need base_url from the user
@@ -346,6 +360,18 @@ function ProvidersTab() {
               </div>
             )}
 
+            <div className="space-y-1.5">
+              <label className="text-[12px] font-medium text-text-secondary uppercase">Context window (optional)</label>
+              <input
+                type="number"
+                min={1}
+                value={form.context_window}
+                onChange={e => setForm({ ...form, context_window: e.target.value })}
+                placeholder="Automatic from the model"
+                className="w-full px-3 py-2 text-[13px] bg-white border border-border rounded-md"
+              />
+              <p className="text-[11px] text-text-secondary">Tokens. Leave blank to infer from the model, or set it for a small local model.</p>
+            </div>
             <div className="space-y-1.5">
               <label className="text-[12px] font-medium text-text-secondary uppercase">
                 API Key{form.type === 'openrouter' ? ' (sk-or-...)' : ''} {editingId !== '' && '(leave blank to keep current)'}

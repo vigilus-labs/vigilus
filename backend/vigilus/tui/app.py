@@ -294,6 +294,7 @@ class ProviderWizardScreen(Screen[dict | None]):
                     "api_key": api_key,
                     "base_url": base_url or selected.get("base_url"),
                     "default_model": selected.get("default_model"),
+                    "context_window": selected.get("context_window"),
                     "enabled": True,
                 }
             )

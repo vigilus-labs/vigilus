@@ -25,6 +25,7 @@ def _to_response(provider: Provider) -> ProviderResponse:
         base_url=provider.base_url,
         has_api_key=bool(provider.api_key),
         default_model=provider.default_model,
+        context_window=provider.context_window,
         extra_headers=provider.extra_headers,
         tool_calling_supported=provider.tool_calling_supported,
         enabled=provider.enabled,
@@ -55,6 +56,7 @@ async def create_provider(data: ProviderCreate, db: AsyncSession = Depends(get_d
         type=data.type,
         base_url=data.base_url,
         default_model=data.default_model,
+        context_window=data.context_window,
         extra_headers=data.extra_headers,
     )
 
@@ -96,6 +98,9 @@ async def update_provider(
         provider.base_url = data.base_url
     if data.default_model is not None:
         provider.default_model = data.default_model
+    # Explicit null clears an override and falls back to model inference.
+    if "context_window" in data.model_fields_set:
+        provider.context_window = data.context_window
     if data.extra_headers is not None:
         provider.extra_headers = data.extra_headers
     if data.enabled is not None:

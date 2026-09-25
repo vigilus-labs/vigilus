@@ -171,6 +171,8 @@ class Provider(Base):
     base_url = Column(String(1024), nullable=True)
     api_key = Column(Text, nullable=True)
     default_model = Column(String(255), nullable=True)
+    # Explicit context window in tokens. None means infer from the model id.
+    context_window = Column(Integer, nullable=True)
     extra_headers = Column(JSON, nullable=True, default=dict)
     tool_calling_supported = Column(Boolean, default=True, nullable=False)
     enabled = Column(Boolean, default=True, nullable=False)
@@ -416,12 +418,25 @@ class ScheduledTask(Base):
     last_status = Column(String(32), nullable=True)  # success | error | running
     last_result = Column(JSON, nullable=True)  # {summary, session_id, error}
     deliver_to = Column(JSON, nullable=True)  # {"platform","chat_id"} channel delivery
+    # Failed runs are retried this many times total (1 = no retry).
+    max_attempts = Column(Integer, nullable=False, default=1, server_default="1")
+    retry_backoff_seconds = Column(Integer, nullable=False, default=30, server_default="30")
     run_count = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
 
     # relationships
     operator = relationship("Operator")
+
+
+class SchedulerLease(Base):
+    """Singleton row so only one process registers cron jobs."""
+
+    __tablename__ = "scheduler_lease"
+
+    id = Column(String(36), primary_key=True)
+    holder = Column(String(64), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class Memory(Base):

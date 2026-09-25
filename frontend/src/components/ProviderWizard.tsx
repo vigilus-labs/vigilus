@@ -60,6 +60,7 @@ export function ProviderWizard({ onClose, onComplete }: Props) {
         api_key: apiKey || null,
         base_url: baseUrl || null,
         default_model: selected.default_model || null,
+        context_window: selected.context_window ?? null,
         enabled: true,
       });
       setCreatedProvider(created);

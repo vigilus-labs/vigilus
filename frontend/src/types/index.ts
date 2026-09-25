@@ -46,6 +46,7 @@ export interface Provider {
   base_url: string | null;
   has_api_key: boolean;
   default_model: string | null;
+  context_window: number | null;
   extra_headers: Record<string, string> | null;
   tool_calling_supported: boolean;
   enabled: boolean;
@@ -199,6 +200,7 @@ export interface CreateProvider {
   base_url?: string | null;
   api_key?: string | null;
   default_model?: string | null;
+  context_window?: number | null;
   extra_headers?: Record<string, string> | null;
   tool_calling_supported?: boolean;
   enabled?: boolean;
@@ -211,6 +213,7 @@ export interface UpdateProvider {
   base_url?: string | null;
   api_key?: string | null;
   default_model?: string | null;
+  context_window?: number | null;
   extra_headers?: Record<string, string> | null;
   tool_calling_supported?: boolean;
   enabled?: boolean;
@@ -464,11 +467,12 @@ export interface ProviderCatalogEntry {
   base_url: string | null;
   key_url: string | null;
   default_model: string | null;
+  context_window?: number | null;
 }
 
 // ─── Scheduled Tasks ──────────────────────────────────────────────────────────
 
-export type ScheduleStatus = 'success' | 'error' | 'running' | 'skipped';
+export type ScheduleStatus = 'success' | 'error' | 'running' | 'skipped' | 'misfired';
 
 export interface ScheduleResult {
   status?: string;
@@ -489,6 +493,8 @@ export interface ScheduledTask {
   next_run_at: string | null;
   last_status: ScheduleStatus | null;
   last_result: ScheduleResult | null;
+  max_attempts: number;
+  retry_backoff_seconds: number;
   run_count: number;
   created_at: string;
   updated_at: string;
@@ -501,6 +507,8 @@ export interface CreateScheduledTask {
   task_prompt: string;
   operator_id?: string | null;
   enabled?: boolean;
+  max_attempts?: number;
+  retry_backoff_seconds?: number;
 }
 
 export interface UpdateScheduledTask {
@@ -510,6 +518,8 @@ export interface UpdateScheduledTask {
   task_prompt?: string;
   operator_id?: string | null;
   enabled?: boolean;
+  max_attempts?: number;
+  retry_backoff_seconds?: number;
 }
 
 // ─── Channels ────────────────────────────────────────────────────────────────

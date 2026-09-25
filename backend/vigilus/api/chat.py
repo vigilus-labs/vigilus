@@ -33,7 +33,7 @@ from vigilus.api.sse import (
     register_bridge,
     unregister_bridge,
 )
-from vigilus.core.compressor import ContextCompressor
+from vigilus.core.compressor import ContextCompressor, resolve_context_window
 from vigilus.core.delegation import execute_delegation, parse_delegation, strip_delegation
 from vigilus.core.events import get_event_bus
 from vigilus.core.orchestrator import (
@@ -836,7 +836,11 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
     # ── Context compression ───────────────────────────────
     # Estimate system prompt tokens for the compressor budget
     system_tokens = len(system_prompt) // 4  # rough char→token estimate
-    compressor = ContextCompressor(provider=provider, model=model)
+    compressor = ContextCompressor(
+        provider=provider,
+        model=model,
+        max_tokens=resolve_context_window(provider_row, model),
+    )
     llm_history, compression_summary = await compressor.compress_if_needed(
         llm_history,
         system_tokens=system_tokens,

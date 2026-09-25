@@ -20,6 +20,7 @@ class ProviderCreate(BaseModel):
     base_url: str | None = None
     api_key: str | None = None
     default_model: str | None = None
+    context_window: int | None = Field(None, ge=1)
     extra_headers: dict[str, Any] | None = None
     tool_calling_supported: bool = True
     enabled: bool = True
@@ -36,6 +37,7 @@ class ProviderUpdate(BaseModel):
     base_url: str | None = None
     api_key: str | None = None
     default_model: str | None = None
+    context_window: int | None = Field(None, ge=1)
     extra_headers: dict[str, Any] | None = None
     tool_calling_supported: bool | None = None
     enabled: bool | None = None
@@ -53,6 +55,7 @@ class ProviderResponse(BaseModel):
     base_url: str | None = None
     has_api_key: bool = False
     default_model: str | None = None
+    context_window: int | None = None
     extra_headers: dict[str, Any] | None = None
     tool_calling_supported: bool = True
     enabled: bool = True
@@ -70,6 +73,7 @@ class ProviderResponse(BaseModel):
             base_url=provider.base_url,
             has_api_key=bool(provider.api_key),
             default_model=provider.default_model,
+            context_window=provider.context_window,
             extra_headers=provider.extra_headers,
             tool_calling_supported=provider.tool_calling_supported,
             enabled=provider.enabled,

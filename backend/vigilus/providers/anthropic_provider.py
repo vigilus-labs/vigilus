@@ -205,6 +205,32 @@ class AnthropicProvider(AgentLLM):
         response = await self.client.messages.create(**kwargs)
         return self._to_response(response)
 
+    async def count_tokens(
+        self,
+        messages: list[LLMMessage],
+        *,
+        system: str | None = None,
+    ) -> int | None:
+        """Anthropic's count_tokens endpoint. None on any failure."""
+        kwargs = self._build_kwargs(
+            messages,
+            system=system,
+            tools=None,
+            temperature=0.0,
+            max_tokens=1,
+        )
+        payload: dict[str, Any] = {
+            "model": kwargs["model"],
+            "messages": kwargs["messages"],
+        }
+        if system:
+            payload["system"] = system
+        try:
+            counted = await self.client.messages.count_tokens(**payload)
+            return int(counted.input_tokens)
+        except Exception:  # noqa: BLE001 — fall back to the character heuristic
+            return None
+
     async def complete_streaming(
         self,
         messages: list[LLMMessage],

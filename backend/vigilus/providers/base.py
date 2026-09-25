@@ -203,6 +203,19 @@ class AgentLLM(ABC):
         """
         ...
 
+    async def count_tokens(
+        self,
+        messages: list[LLMMessage],
+        *,
+        system: str | None = None,
+    ) -> int | None:
+        """Exact input-token count, or None when this provider cannot count.
+
+        Used only to confirm a heuristic that is already near the context
+        window. Failures should return None so the caller keeps the estimate.
+        """
+        return None
+
     async def complete_streaming(
         self,
         messages: list[LLMMessage],

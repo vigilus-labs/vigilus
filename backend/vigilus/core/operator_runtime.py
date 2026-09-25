@@ -102,6 +102,7 @@ class OperatorRuntime:
                 f"Operator '{operator.name}' has no provider configured and no "
                 "default provider is available. Add a provider in Settings."
             )
+        self._provider_row = provider_row
         self.provider = build_provider(provider_row)
         if operator.model and hasattr(self.provider, "default_model"):
             self.provider.default_model = operator.model
@@ -248,6 +249,8 @@ class OperatorRuntime:
                 iteration=iteration + 1,
                 tool_count=len(tools),
             )
+
+            await self._fit_context(messages)
 
             try:
                 response = await await_cancelled(
@@ -486,6 +489,23 @@ class OperatorRuntime:
             )
 
         return messages, tool_history
+
+    async def _fit_context(self, messages: list[LLMMessage]) -> None:
+        """Drop old tool bodies, then summarize if the window is still full."""
+        from vigilus.core.compressor import (
+            ContextCompressor,
+            elide_old_tool_results,
+            resolve_context_window,
+        )
+
+        elided = elide_old_tool_results(messages)
+        if elided is not messages:
+            messages[:] = elided
+        window = resolve_context_window(self._provider_row, self._model)
+        compressor = ContextCompressor(self.provider, model=self._model, max_tokens=window)
+        compressed, _summary = await compressor.compress_if_needed(messages)
+        if compressed is not messages:
+            messages[:] = compressed
 
     async def _summarize_after_iteration_limit(
         self,

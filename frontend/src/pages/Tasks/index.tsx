@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronRight,
   CheckCircle2,
+  AlertTriangle,
   XCircle,
   Loader2,
   MinusCircle,
@@ -46,6 +47,8 @@ const EMPTY_FORM = {
   taskPrompt: '',
   operatorId: '',
   enabled: true,
+  maxAttempts: 1,
+  retryBackoff: 30,
 };
 
 type SchedForm = typeof EMPTY_FORM;
@@ -151,6 +154,11 @@ function StatusBadge({ status }: { status: ScheduleStatus | null }) {
       icon: <MinusCircle className="w-3 h-3" />,
       label: 'skipped',
     },
+    misfired: {
+      cls: 'text-amber-700 dark:text-amber-400 bg-amber-500/10',
+      icon: <AlertTriangle className="w-3 h-3" />,
+      label: 'misfired',
+    },
   };
   const s = styles[status];
   return (
@@ -215,6 +223,8 @@ export default function Tasks() {
       taskPrompt: task.task_prompt,
       operatorId: task.operator_id || '',
       enabled: task.enabled,
+      maxAttempts: task.max_attempts ?? 1,
+      retryBackoff: task.retry_backoff_seconds ?? 30,
     });
     setIsModalOpen(true);
   };
@@ -234,6 +244,8 @@ export default function Tasks() {
         task_prompt: form.taskPrompt.trim(),
         operator_id: form.operatorId || null,
         enabled: form.enabled,
+        max_attempts: Math.max(1, Number(form.maxAttempts) || 1),
+        retry_backoff_seconds: Math.max(0, Number(form.retryBackoff) || 0),
       };
       if (editingId) {
         await api.updateSchedule(editingId, payload);
@@ -643,6 +655,33 @@ export default function Tasks() {
                     <option key={o.id} value={o.id}>{o.name}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
+                    Attempts
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={form.maxAttempts}
+                    onChange={(e) => setForm({ ...form, maxAttempts: Number(e.target.value) })}
+                    className="input w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
+                    Retry wait (seconds)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={form.retryBackoff}
+                    onChange={(e) => setForm({ ...form, retryBackoff: Number(e.target.value) })}
+                    className="input w-full"
+                  />
+                </div>
               </div>
 
               {/* Enabled */}
