@@ -218,7 +218,6 @@ async def execute_delegation(
         final_msgs, tool_history = await runtime.run(
             messages,
             session_id=session_id,
-            max_iterations=10,
             bridge=bridge,
             cancel_event=cancel_event,
             unattended=unattended,
@@ -233,12 +232,14 @@ async def execute_delegation(
                     final_text = text
 
         loop_detected = any(t.get("loop_detected") for t in tool_history)
+        iteration_limit_reached = any(t.get("iteration_limit_reached") for t in tool_history)
 
         logger.info(
             "delegation.complete",
             target=target_name,
             tool_calls=len(tool_history),
             loop_detected=loop_detected,
+            iteration_limit_reached=iteration_limit_reached,
             response_preview=final_text[:120],
         )
 
@@ -248,6 +249,7 @@ async def execute_delegation(
             "response": final_text,
             "tool_calls": tool_history,
             "loop_detected": loop_detected,
+            "iteration_limit_reached": iteration_limit_reached,
         }
 
     except TaskCancelled:

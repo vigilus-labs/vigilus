@@ -24,6 +24,7 @@ class OperatorCreate(BaseModel):
     trust_mode: TrustMode = TrustMode.inherit
     working_dir: str | None = None
     monthly_budget_usd: float | None = Field(None, ge=0)
+    max_iterations: int | None = Field(None, ge=1)
     is_builtin: bool = False
     delegatable: bool = True
     enabled: bool = True
@@ -53,6 +54,7 @@ class OperatorUpdate(BaseModel):
     trust_mode: TrustMode | None = None
     working_dir: str | None = None
     monthly_budget_usd: float | None = Field(None, ge=0)
+    max_iterations: int | None = Field(None, ge=1)
     delegatable: bool | None = None
     enabled: bool | None = None
     icon: str | None = None
@@ -82,6 +84,7 @@ class OperatorResponse(BaseModel):
     trust_mode: TrustMode
     working_dir: str | None = None
     monthly_budget_usd: float | None = None
+    max_iterations: int | None = None
     is_builtin: bool = False
     delegatable: bool = True
     enabled: bool = True
@@ -106,6 +109,7 @@ class OperatorResponse(BaseModel):
             trust_mode=operator.trust_mode,
             working_dir=operator.working_dir,
             monthly_budget_usd=operator.monthly_budget_usd,
+            max_iterations=operator.max_iterations,
             is_builtin=operator.is_builtin,
             delegatable=operator.delegatable,
             enabled=operator.enabled,

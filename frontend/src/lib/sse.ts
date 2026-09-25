@@ -44,6 +44,7 @@ export interface SSEEventData {
   status?: string;
   summary?: string;
   loop_detected?: boolean;
+  iteration_limit_reached?: boolean;
   // text_delta (whole message) / text_chunk (incremental slice of it)
   text?: string;
   // done

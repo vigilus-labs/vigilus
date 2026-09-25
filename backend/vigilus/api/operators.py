@@ -46,6 +46,7 @@ def _to_response(op: Operator) -> OperatorResponse:
         trust_mode=op.trust_mode.value,
         working_dir=op.working_dir,
         monthly_budget_usd=op.monthly_budget_usd,
+        max_iterations=op.max_iterations,
         is_builtin=op.is_builtin,
         delegatable=op.delegatable,
         enabled=op.enabled,
@@ -101,6 +102,7 @@ async def create_operator(data: OperatorCreate, db: AsyncSession = Depends(get_d
         trust_mode=data.trust_mode,
         working_dir=data.working_dir,
         monthly_budget_usd=data.monthly_budget_usd,
+        max_iterations=data.max_iterations,
         icon=data.icon,
     )
     db.add(op)
@@ -161,6 +163,9 @@ async def update_operator(
     # fields_set pattern the model override uses.
     if "monthly_budget_usd" in data.model_fields_set:
         op.monthly_budget_usd = data.monthly_budget_usd or None
+    # Explicit null clears a per-operator cap and falls back to the global default.
+    if "max_iterations" in data.model_fields_set:
+        op.max_iterations = data.max_iterations
     if data.enabled is not None:
         op.enabled = data.enabled
     if data.icon is not None:

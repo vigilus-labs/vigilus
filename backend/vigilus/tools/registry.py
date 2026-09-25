@@ -309,6 +309,7 @@ class ToolRegistry:
                 args=arguments,
                 outcome=ActionOutcome.error if not result_obj.success else ActionOutcome.success,
                 error=result_obj.error,
+                output=result_obj.output or None,
                 duration_ms=duration_ms,
                 session_id=session_id,
             )

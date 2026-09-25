@@ -29,6 +29,56 @@ def _call_signature(tool_name: str, arguments: dict[str, Any]) -> str:
     return f"{tool_name}:{canonical}"
 
 
+_ITERATION_LIMIT_PROMPT = (
+    "You have reached the iteration limit and cannot call any more tools. "
+    "Summarize what you have found so far and what remains unfinished. "
+    "Do not request further tool calls."
+)
+
+_ITERATION_LIMIT_FALLBACK = (
+    "Iteration limit reached before a final report. "
+    "The tool results above are the findings so far; the task may be unfinished."
+)
+
+
+def cap_tool_output(text: str, max_chars: int) -> str:
+    """Keep the head and tail of an oversized tool result.
+
+    ``max_chars`` of 0 or less disables the cap. The marker reports how many
+    characters were omitted. The returned string is never longer than
+    ``max_chars`` when the cap is enabled and the input exceeds it.
+    """
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+
+    def marker_for(omitted: int) -> str:
+        return f"\n[... {omitted} bytes truncated ...]\n"
+
+    omitted = len(text) - max_chars
+    for _ in range(8):
+        marker = marker_for(max(omitted, 0))
+        if len(marker) >= max_chars:
+            break
+        budget = max_chars - len(marker)
+        head = budget // 2
+        tail = budget - head
+        new_omitted = len(text) - head - tail
+        if new_omitted == omitted:
+            return text[:head] + marker + text[-tail:]
+        omitted = new_omitted
+
+    note = f"\n[... {len(text)} bytes truncated ...]"
+    if len(note) >= max_chars:
+        return text[:max_chars]
+    keep = max_chars - len(note)
+    omitted = len(text) - keep
+    note = f"\n[... {omitted} bytes truncated ...]"
+    if len(note) >= max_chars:
+        return text[:max_chars]
+    keep = max_chars - len(note)
+    return text[:keep] + note
+
+
 def _args_preview(redacted: dict[str, Any] | None, limit: int = 120) -> str:
     """Compact one-line rendering of redacted tool arguments for live feeds."""
     if not redacted:
@@ -124,7 +174,7 @@ class OperatorRuntime:
         messages: list[LLMMessage],
         session_id: str | None = None,
         jit_token: str | None = None,
-        max_iterations: int = 15,
+        max_iterations: int | None = None,
         bridge: Any | None = None,  # StreamBridge from api.sse
         cancel_event: Any | None = None,  # asyncio.Event — stop when set
         unattended: bool = False,  # scheduled run — use longer JIT wait
@@ -136,6 +186,7 @@ class OperatorRuntime:
             session_id: The chat session ID (for audit logs).
             jit_token: Optional JIT token for elevated privileges.
             max_iterations: Safety limit to prevent infinite tool loops.
+                None uses this operator's limit, or the global default.
 
         Returns:
             A tuple of:
@@ -149,6 +200,9 @@ class OperatorRuntime:
         from vigilus.config import get_settings
 
         settings = get_settings()
+        if max_iterations is None:
+            operator_limit = getattr(self.operator, "max_iterations", None)
+            max_iterations = operator_limit or settings.operator_max_iterations
         # 0 disables loop detection entirely.
         loop_threshold = settings.loop_detection_threshold
         last_signature: str | None = None
@@ -379,7 +433,9 @@ class OperatorRuntime:
                         cancel_event=cancel_event,
                     )
 
-                    tool_output = result.output if result.success else f"Error: {result.error}"
+                    raw_output = result.output if result.success else f"Error: {result.error}"
+                    raw_output = raw_output or ""
+                    tool_output = cap_tool_output(raw_output, settings.tool_output_max_chars)
                     tool_msg = LLMMessage(
                         role="tool",
                         name=tool_use.name,
@@ -418,5 +474,66 @@ class OperatorRuntime:
 
             if loop_detected:
                 break
+        else:
+            await self._summarize_after_iteration_limit(
+                messages,
+                system_prompt,
+                tool_history,
+                max_iterations=max_iterations,
+                session_id=session_id,
+                cancel_event=cancel_event,
+                settings=settings,
+            )
 
         return messages, tool_history
+
+    async def _summarize_after_iteration_limit(
+        self,
+        messages: list[LLMMessage],
+        system_prompt: str | None,
+        tool_history: list[dict[str, Any]],
+        *,
+        max_iterations: int,
+        session_id: str | None,
+        cancel_event: Any | None,
+        settings: Any,
+    ) -> None:
+        """One last call with tools disabled so a capped run still reports."""
+        logger.warning(
+            "operator.iteration_limit",
+            operator=self.operator.name,
+            max_iterations=max_iterations,
+        )
+        messages.append(LLMMessage(role="user", content=_ITERATION_LIMIT_PROMPT))
+        response = await await_cancelled(
+            self.provider.complete(
+                messages=messages,
+                system=system_prompt,
+                tools=None,
+                temperature=0.0,
+            ),
+            cancel_event,
+            timeout=settings.llm_request_timeout_seconds,
+        )
+
+        from vigilus.core.llm_usage import record_llm_usage
+        from vigilus.db.models import UsageActorType
+
+        await record_llm_usage(
+            usage=response.usage or {},
+            actor_type=UsageActorType.operator,
+            operator_id=self.operator.id,
+            session_id=session_id,
+            provider_id=self._provider_id,
+            provider_type=self._provider_type,
+            model=getattr(self.provider, "default_model", None) or self._model,
+        )
+
+        summary = (response.content or "").strip() or _ITERATION_LIMIT_FALLBACK
+        messages.append(LLMMessage(role="assistant", content=summary))
+        tool_history.append(
+            {
+                "iteration_limit_reached": True,
+                "max_iterations": max_iterations,
+            }
+        )

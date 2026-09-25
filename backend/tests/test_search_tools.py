@@ -94,6 +94,8 @@ async def test_web_search_runs_for_vigilus_and_audits(db_session, monkeypatch):
     )
     events = {a.event for a in actions}
     assert "tool_call_start" in events and "tool_call_end" in events
+    end = next(a for a in actions if a.event == "tool_call_end")
+    assert end.output == result.output
     assert all(a.actor == VIGILUS_PRINCIPAL_NAME for a in actions)
     # The query is logged (not secret); no API key ever lands in args.
     for a in actions:

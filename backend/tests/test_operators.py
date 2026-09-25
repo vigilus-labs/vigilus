@@ -36,7 +36,19 @@ async def test_operator_crud(db_session: AsyncSession, async_client: AsyncClient
     data = res.json()
     assert data["name"] == "Test Operator"
     assert tool.id in data["tool_ids"]
+    assert data["max_iterations"] is None
     op_id = data["id"]
+
+    res = await async_client.patch(f"/api/operators/{op_id}", json={"max_iterations": 4})
+    assert res.status_code == 200
+    assert res.json()["max_iterations"] == 4
+
+    res = await async_client.patch(f"/api/operators/{op_id}", json={"max_iterations": None})
+    assert res.status_code == 200
+    assert res.json()["max_iterations"] is None
+
+    res = await async_client.patch(f"/api/operators/{op_id}", json={"max_iterations": 0})
+    assert res.status_code == 422
 
     # 3. Get Operator
     res = await async_client.get(f"/api/operators/{op_id}")

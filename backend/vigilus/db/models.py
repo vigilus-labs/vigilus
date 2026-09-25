@@ -195,6 +195,9 @@ class Operator(Base):
     # Monthly LLM spend cap in USD for this operator. None = no per-operator
     # limit (the platform-wide budget, if any, still applies).
     monthly_budget_usd = Column(Float, nullable=True)
+    # Tool-calling rounds before the runtime forces a summary. None uses the
+    # global VIGILUS_OPERATOR_MAX_ITERATIONS default.
+    max_iterations = Column(Integer, nullable=True)
     permission_level = Column(Enum(PermissionLevel), nullable=False, default=PermissionLevel.read)
     trust_mode = Column(Enum(TrustMode), nullable=False, default=TrustMode.inherit)
     working_dir = Column(String(1024), nullable=True)
@@ -380,6 +383,9 @@ class Action(Base):
     args = Column(JSON, nullable=True)
     outcome = Column(Enum(ActionOutcome), nullable=False, default=ActionOutcome.pending)
     error = Column(Text, nullable=True)
+    # Full tool output. The operator only sees a capped copy; this is what the
+    # Actions page shows when a row is expanded.
+    output = Column(Text, nullable=True)
     duration_ms = Column(Float, nullable=True)
     session_id = Column(String(36), ForeignKey("sessions.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)

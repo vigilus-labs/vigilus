@@ -9,6 +9,7 @@ export default function Actions() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [outcomeFilter, setOutcomeFilter] = useState<string>('all');
+  const [outputs, setOutputs] = useState<Record<string, { loading: boolean; text: string | null; failed: boolean }>>({});
 
   const fetchActions = async () => {
     try {
@@ -31,7 +32,18 @@ export default function Actions() {
   };
 
   const toggleRow = (id: string) => {
-    setExpandedId(expandedId === id ? null : id);
+    if (expandedId === id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(id);
+    if (outputs[id]) return;
+    setOutputs(prev => ({ ...prev, [id]: { loading: true, text: null, failed: false } }));
+    api.getAction(id).then(full => {
+      setOutputs(prev => ({ ...prev, [id]: { loading: false, text: full.output, failed: false } }));
+    }).catch(() => {
+      setOutputs(prev => ({ ...prev, [id]: { loading: false, text: null, failed: true } }));
+    });
   };
 
   const getOutcomeIcon = (outcome: ActionOutcome) => {
@@ -178,15 +190,22 @@ export default function Actions() {
                               </pre>
                             </div>
                             <div className="space-y-2">
-                              <h4 className="text-[12px] font-medium text-text-secondary uppercase tracking-wider">Error / Details</h4>
-                              <pre className={cn(
-                                "border rounded-md p-3 text-[12px] overflow-x-auto font-mono whitespace-pre-wrap",
-                                action.error 
-                                  ? "bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20 text-red-700 dark:text-red-400"
-                                  : "bg-white dark:bg-surface border-border dark:border-border text-text-primary dark:text-text-primary"
-                              )}>
-                                {action.error || 'No error details recorded.'}
+                              <h4 className="text-[12px] font-medium text-text-secondary uppercase tracking-wider">Output</h4>
+                              <pre className="bg-white dark:bg-surface border border-border dark:border-border rounded-md p-3 text-[12px] overflow-auto max-h-80 font-mono whitespace-pre-wrap text-text-primary dark:text-text-primary">
+                                {outputs[action.id]?.loading
+                                  ? 'Loading output…'
+                                  : outputs[action.id]?.failed
+                                    ? 'Output could not be loaded.'
+                                    : (outputs[action.id]?.text || 'No output recorded.')}
                               </pre>
+                              {action.error && (
+                                <>
+                                  <h4 className="text-[12px] font-medium text-text-secondary uppercase tracking-wider pt-2">Error</h4>
+                                  <pre className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-md p-3 text-[12px] overflow-x-auto font-mono whitespace-pre-wrap text-red-700 dark:text-red-400">
+                                    {action.error}
+                                  </pre>
+                                </>
+                              )}
                             </div>
                           </div>
                         </td>

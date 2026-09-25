@@ -81,9 +81,11 @@ export function describeActivity(ev: RunningTaskActivity): ActivityView {
       };
     case 'delegation_result':
       return {
-        label: `${d.operator ?? 'Operator'} finished`,
+        label: d.iteration_limit_reached
+          ? `${d.operator ?? 'Operator'} hit the iteration limit`
+          : `${d.operator ?? 'Operator'} finished`,
         detail: typeof d.summary === 'string' ? d.summary : null,
-        tone: 'delegation',
+        tone: d.iteration_limit_reached ? 'warning' : 'delegation',
       };
     case 'loop_detected':
       return {

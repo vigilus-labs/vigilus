@@ -25,6 +25,7 @@ class ActionResponse(BaseModel):
     args: dict[str, Any] | None = None
     outcome: ActionOutcome
     error: str | None = None
+    output: str | None = None
     duration_ms: float | None = None
     session_id: str | None = None
     created_at: datetime

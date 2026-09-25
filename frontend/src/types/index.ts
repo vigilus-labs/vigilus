@@ -61,6 +61,7 @@ export interface Operator {
   provider_id: string | null;
   model: string | null;
   monthly_budget_usd?: number | null;
+  max_iterations?: number | null;
   system_prompt: string | null;
   soul: string | null;
   trust_mode: TrustMode;
@@ -167,6 +168,7 @@ export interface Action {
   args: Record<string, unknown> | null;
   outcome: ActionOutcome;
   error: string | null;
+  output: string | null;
   duration_ms: number | null;
   session_id: string | null;
   created_at: string;
@@ -223,6 +225,7 @@ export interface CreateOperator {
   provider_id?: string | null;
   model?: string | null;
   monthly_budget_usd?: number | null;
+  max_iterations?: number | null;
   permission_level?: PermissionLevel;
   trust_mode?: TrustMode;
   working_dir?: string | null;
@@ -238,6 +241,7 @@ export interface UpdateOperator {
   provider_id?: string | null;
   model?: string | null;
   monthly_budget_usd?: number | null;
+  max_iterations?: number | null;
   permission_level?: PermissionLevel;
   trust_mode?: TrustMode;
   working_dir?: string | null;

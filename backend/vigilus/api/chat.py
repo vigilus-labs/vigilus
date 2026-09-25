@@ -635,6 +635,9 @@ async def _run_orchestrator(
                     "operator": operator_name,
                     "status": delegation_result.get("status"),
                     "loop_detected": delegation_result.get("loop_detected", False),
+                    "iteration_limit_reached": delegation_result.get(
+                        "iteration_limit_reached", False
+                    ),
                     "summary": result_summary[:500],
                 },
             )
@@ -689,6 +692,12 @@ def _format_delegation_result(result: dict[str, Any]) -> str:
             "NOTE: this run was ABORTED by loop detection — the operator caught "
             "itself repeating an identical tool call. Re-delegating the exact "
             "same task unchanged will likely loop again; adjust the approach.\n"
+        )
+    if result.get("iteration_limit_reached"):
+        parts.append(
+            "NOTE: this run hit its iteration limit. The response is a summary "
+            "of partial work, not a completed task. You may continue by "
+            "delegating a narrower follow-up.\n"
         )
     if response:
         parts.append(f"RESPONSE:\n{response}\n")

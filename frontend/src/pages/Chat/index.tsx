@@ -870,7 +870,7 @@ export default function Chat() {
       case 'tool_result':
         return `${d.tool || 'Tool'}: ${(d.preview || 'completed').slice(0, 100)}`;
       case 'delegation_result':
-        return `${d.operator || 'Operator'} finished (${d.status || 'done'})${d.loop_detected ? ' — loop detected' : ''}`;
+        return `${d.operator || 'Operator'} finished (${d.status || 'done'})${d.loop_detected ? ' — loop detected' : ''}${d.iteration_limit_reached ? ' — iteration limit reached' : ''}`;
       case 'loop_detected':
         return `Loop detected — aborted ${d.tool || 'tool'} after ${d.count || '?'} identical calls`;
       case 'text_delta':

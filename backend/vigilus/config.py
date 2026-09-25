@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     # Abort an operator loop after this many consecutive identical tool calls
     # (same tool + same arguments). 0 disables loop detection.
     loop_detection_threshold: int = Field(default=3, ge=0)
+    # Cap tool results before they are fed back to the operator. 0 disables.
+    # The full output is still stored on the audit Action.
+    tool_output_max_chars: int = Field(default=12_000, ge=0)
+    # Default tool-calling rounds for an operator. A per-operator
+    # max_iterations column overrides this when set.
+    operator_max_iterations: int = Field(default=10, ge=1)
 
     # ── CORS ────────────────────────────────────────────────
     cors_origins: list[str] = ["http://localhost:5173"]

@@ -19,6 +19,7 @@ const EMPTY_FORM = {
   trustMode: 'inherit' as TrustMode,
   workingDir: '/tmp',
   monthlyBudget: '',
+  maxIterations: '',
   selectedTools: [] as string[],
   enabled: true,
 };
@@ -148,6 +149,7 @@ export default function Operators() {
       trustMode: op.trust_mode,
       workingDir: op.working_dir ?? '/tmp',
       monthlyBudget: op.monthly_budget_usd != null ? String(op.monthly_budget_usd) : '',
+      maxIterations: op.max_iterations != null ? String(op.max_iterations) : '',
       selectedTools: op.tool_ids,
       enabled: op.enabled,
     });
@@ -174,6 +176,15 @@ export default function Operators() {
         return;
       }
     }
+    const trimmedIterations = form.maxIterations.trim();
+    let maxIterations: number | null = null;
+    if (trimmedIterations !== '') {
+      maxIterations = Number(trimmedIterations);
+      if (!Number.isInteger(maxIterations) || maxIterations < 1) {
+        toast('Iteration limit must be a positive whole number', 'error');
+        return;
+      }
+    }
     try {
       if (editingId) {
         await api.updateOperator(editingId, {
@@ -184,6 +195,7 @@ export default function Operators() {
           provider_id: form.providerId || undefined,
           model: effectiveModel,
           monthly_budget_usd: monthlyBudgetUsd,
+          max_iterations: maxIterations,
           permission_level: form.permission,
           trust_mode: form.trustMode,
           working_dir: form.workingDir || null,
@@ -200,6 +212,7 @@ export default function Operators() {
           provider_id: form.providerId,
           model: effectiveModel,
           monthly_budget_usd: monthlyBudgetUsd,
+          max_iterations: maxIterations,
           permission_level: form.permission,
           trust_mode: form.trustMode,
           working_dir: form.workingDir,
@@ -607,6 +620,22 @@ export default function Operators() {
                     <p className="text-[11px] text-text-secondary/70">
                       Stops this operator's LLM calls when its month-to-date estimated spend
                       reaches the cap.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[12px] font-medium text-text-secondary uppercase tracking-wider">Iteration Limit</label>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={form.maxIterations}
+                      onChange={e => setForm({ ...form, maxIterations: e.target.value })}
+                      placeholder="Server default (10)"
+                      className="w-full px-3 py-2 text-[13px] bg-transparent border border-border dark:border-border rounded-md focus:border-accent"
+                    />
+                    <p className="text-[11px] text-text-secondary/70">
+                      Tool-calling rounds before this operator must summarize. Leave empty
+                      to use the server default (10).
                     </p>
                   </div>
                   {editingId && (
