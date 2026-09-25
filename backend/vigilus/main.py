@@ -156,6 +156,20 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001
         pass
 
+    from vigilus.api.auth import auth_cookie_needs_exposure_warning
+
+    if auth_cookie_needs_exposure_warning(settings.host, forced_secure=settings.auth_cookie_secure):
+        logger.warning(
+            "startup.auth_cookie_insecure",
+            host=settings.host,
+            detail=(
+                "Auth cookie is not forced Secure while bound outside loopback. "
+                "HTTPS requests are marked Secure automatically. If TLS ends at a "
+                "proxy, set VIGILUS_AUTH_COOKIE_SECURE=true or forward "
+                "X-Forwarded-Proto: https."
+            ),
+        )
+
     # Reconcile MCP server state, then autostart configured servers.
     # A previous process that died without cleaning up leaves DB rows marked
     # 'running' while the in-memory connections dict is empty — flip them to

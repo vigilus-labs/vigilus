@@ -109,6 +109,7 @@ All settings are configurable via environment variables with the `VIGILUS_` pref
 | `VIGILUS_DATA_DIR` | `./data` | Data directory for DB, keys, MCP working dirs |
 | `VIGILUS_HOST` | `0.0.0.0` | Server bind address |
 | `VIGILUS_PORT` | `8000` | Server port |
+| `VIGILUS_AUTH_COOKIE_SECURE` | `false` | Force the auth cookie `Secure` flag. HTTPS requests and `X-Forwarded-Proto: https` set it automatically. Set `true` when TLS ends at a proxy that does not forward that header. |
 | `VIGILUS_TRUST_MODE` | `strict` | Default trust mode (`strict` or `lenient`) |
 | `VIGILUS_JIT_MAX_TTL` | `60` | Maximum JIT token TTL in minutes |
 | `VIGILUS_JIT_DEFAULT_TTL` | `15` | Default JIT token TTL in minutes |

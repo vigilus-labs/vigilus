@@ -31,17 +31,53 @@ from vigilus.schemas.auth import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = structlog.get_logger("vigilus.auth")
 
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
-def _set_auth_cookie(response: Response, token: str) -> None:
+
+def auth_cookie_secure_for_request(request: Request) -> bool:
+    """True when the auth cookie must be marked Secure.
+
+    ``VIGILUS_AUTH_COOKIE_SECURE`` forces it. Otherwise an HTTPS request, or a
+    proxy that sends ``X-Forwarded-Proto: https``, upgrades the cookie. A
+    spoofed proto header only makes the cookie stricter.
+    """
+    if get_settings().auth_cookie_secure:
+        return True
+    if request.url.scheme == "https":
+        return True
+    forwarded = request.headers.get("x-forwarded-proto", "")
+    proto = forwarded.split(",")[0].strip().lower()
+    return proto == "https"
+
+
+def auth_cookie_needs_exposure_warning(host: str, *, forced_secure: bool) -> bool:
+    """True when a non-loopback bind leaves the cookie insecure on plain HTTP."""
+    if forced_secure:
+        return False
+    normalized = host.strip().strip("[]").lower()
+    return normalized not in _LOOPBACK_HOSTS
+
+
+def _set_auth_cookie(response: Response, token: str, request: Request) -> None:
     settings = get_settings()
     response.set_cookie(
         key=settings.auth_cookie_name,
         value=token,
         httponly=True,
         samesite="lax",
-        secure=settings.auth_cookie_secure,
+        secure=auth_cookie_secure_for_request(request),
         max_age=settings.auth_token_ttl_hours * 3600,
         path="/",
+    )
+
+
+def _clear_auth_cookie(response: Response, request: Request) -> None:
+    settings = get_settings()
+    response.delete_cookie(
+        key=settings.auth_cookie_name,
+        path="/",
+        samesite="lax",
+        secure=auth_cookie_secure_for_request(request),
     )
 
 
@@ -82,7 +118,7 @@ async def setup_first_user(
     await db.refresh(user)
 
     token = create_token(user.id, user.token_version)
-    _set_auth_cookie(response, token)
+    _set_auth_cookie(response, token, request)
     logger.info("auth.setup_complete", username=user.username)
     return AuthUserResponse.model_validate(user)
 
@@ -131,7 +167,7 @@ async def login(
 ):
     user = await _authenticate(data, request, db)
     token = create_token(user.id, user.token_version)
-    _set_auth_cookie(response, token)
+    _set_auth_cookie(response, token, request)
     logger.info("auth.login_ok", username=user.username, ip=_client_ip(request))
     return AuthUserResponse.model_validate(user)
 
@@ -167,12 +203,7 @@ async def logout(
     response: Response,
     user: User = Depends(require_user),
 ):
-    settings = get_settings()
-    response.delete_cookie(
-        key=settings.auth_cookie_name,
-        path="/",
-        samesite="lax",
-    )
+    _clear_auth_cookie(response, request)
     logger.info("auth.logout", username=user.username)
 
 
@@ -190,6 +221,7 @@ async def get_me(user: User = Depends(require_user)):
 @router.post("/change-password", status_code=204)
 async def change_password(
     data: ChangePasswordRequest,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_user),
@@ -204,5 +236,5 @@ async def change_password(
 
     # Re-issue cookie with new version so current session survives
     token = create_token(user.id, user.token_version)
-    _set_auth_cookie(response, token)
+    _set_auth_cookie(response, token, request)
     logger.info("auth.password_changed", username=user.username)

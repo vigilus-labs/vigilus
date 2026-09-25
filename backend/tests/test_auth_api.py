@@ -3,6 +3,41 @@
 from __future__ import annotations
 
 import pytest
+from starlette.requests import Request
+
+from vigilus.api.auth import auth_cookie_needs_exposure_warning, auth_cookie_secure_for_request
+
+
+def _request(scheme: str = "http", proto: str | None = None) -> Request:
+    headers = []
+    if proto is not None:
+        headers.append((b"x-forwarded-proto", proto.encode()))
+    scope = {
+        "type": "http",
+        "scheme": scheme,
+        "server": ("testserver", 443 if scheme == "https" else 80),
+        "method": "GET",
+        "path": "/",
+        "query_string": b"",
+        "headers": headers,
+    }
+    return Request(scope)
+
+
+def test_auth_cookie_secure_follows_scheme_and_forwarded_proto():
+    assert auth_cookie_secure_for_request(_request()) is False
+    assert auth_cookie_secure_for_request(_request(scheme="https")) is True
+    assert auth_cookie_secure_for_request(_request(proto="https, http")) is True
+    assert auth_cookie_secure_for_request(_request(proto="http")) is False
+
+
+def test_auth_cookie_warning_only_for_non_loopback_without_force():
+    assert auth_cookie_needs_exposure_warning("0.0.0.0", forced_secure=False) is True
+    assert auth_cookie_needs_exposure_warning("127.0.0.1", forced_secure=False) is False
+    assert auth_cookie_needs_exposure_warning("::1", forced_secure=False) is False
+    assert auth_cookie_needs_exposure_warning("localhost", forced_secure=False) is False
+    assert auth_cookie_needs_exposure_warning("0.0.0.0", forced_secure=True) is False
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -100,6 +135,39 @@ async def test_login_lockout_after_failures(unauthenticated_client):
         "/api/auth/login", json={"username": "admin", "password": "wrong1234!"}
     )
     assert r.status_code == 429
+
+
+def _set_cookie(response) -> str:
+    return "\n".join(response.headers.get_list("set-cookie"))
+
+
+@pytest.mark.asyncio
+async def test_auth_cookie_is_not_secure_on_plain_http(unauthenticated_client):
+    r = await _setup(unauthenticated_client)
+    cookie = _set_cookie(r)
+    assert "vigilus_token=" in cookie
+    assert "Secure" not in cookie
+
+
+@pytest.mark.asyncio
+async def test_auth_cookie_is_secure_behind_https_proxy(unauthenticated_client):
+    r = await unauthenticated_client.post(
+        "/api/auth/setup",
+        json=VALID_USER,
+        headers={"X-Forwarded-Proto": "https, http"},
+    )
+    assert r.status_code == 200
+    cookie = _set_cookie(r)
+    assert "Secure" in cookie
+
+    # httpx drops Secure cookies on an http:// base URL, so replay the value.
+    token = cookie.split("vigilus_token=", 1)[1].split(";", 1)[0]
+    logout = await unauthenticated_client.post(
+        "/api/auth/logout",
+        headers={"X-Forwarded-Proto": "https", "Cookie": f"vigilus_token={token}"},
+    )
+    assert logout.status_code == 204
+    assert "Secure" in _set_cookie(logout)
 
 
 @pytest.mark.asyncio

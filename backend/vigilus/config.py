@@ -75,7 +75,10 @@ class Settings(BaseSettings):
     # ── Auth ────────────────────────────────────────────────
     auth_token_ttl_hours: int = 168  # 7 days
     auth_cookie_name: str = "vigilus_token"
-    auth_cookie_secure: bool = False  # set True behind HTTPS/reverse proxy
+    # False keeps local HTTP logins working. HTTPS requests, and proxies that
+    # send X-Forwarded-Proto: https, still mark the cookie Secure. Set true to
+    # force Secure when TLS ends at a proxy that does not forward that header.
+    auth_cookie_secure: bool = False
     auth_max_login_failures: int = 5
     auth_lockout_minutes: int = 5
 

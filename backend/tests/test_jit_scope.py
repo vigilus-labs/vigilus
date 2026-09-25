@@ -1,6 +1,8 @@
 """Tests for JIT approval granularity: once vs timed, custom/clamped TTL,
 resource scoping, and single-use exclusion from token reuse."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -125,3 +127,47 @@ async def test_find_approved_token_skips_once(db_session: AsyncSession):
     found = await reg._find_approved_token(db_session, op, "server:web01", Permission.exec)
     assert found is not None
     assert found.permission >= Permission.exec
+
+
+@pytest.mark.asyncio
+async def test_find_approved_token_skips_grant_for_another_resource(db_session: AsyncSession):
+    """A newer grant for a different host must not hide an older covering grant."""
+    op = await _make_operator(db_session)
+    warden = WardenService()
+    reg = ToolRegistry()
+    now = datetime.now(UTC)
+
+    covering = warden.issue_token(op.id, "server:web01", Permission.exec, 15)
+    other = warden.issue_token(op.id, "server:other", Permission.exec, 15)
+    db_session.add_all(
+        [
+            JitRequest(
+                operator_id=op.id,
+                resource="server:web01",
+                permission="exec",
+                task_description="covering",
+                status=JitStatus.approved,
+                token_id=covering,
+                ttl_minutes=15,
+                scope_mode="timed",
+                resolved_at=now - timedelta(minutes=5),
+            ),
+            JitRequest(
+                operator_id=op.id,
+                resource="server:other",
+                permission="exec",
+                task_description="newer-other-host",
+                status=JitStatus.approved,
+                token_id=other,
+                ttl_minutes=15,
+                scope_mode="timed",
+                resolved_at=now,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    found = await reg._find_approved_token(db_session, op, "server:web01", Permission.exec)
+    assert found is not None
+    assert found.token_id == covering
+    assert found.resource == "server:web01"
