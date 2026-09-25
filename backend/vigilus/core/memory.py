@@ -26,7 +26,7 @@ from vigilus.db.models import Memory
 
 logger = structlog.get_logger(__name__)
 
-# Cap how many memories are injected into a prompt, newest first.
+# Cap the prompt context to the newest memories.
 MAX_PROMPT_MEMORIES = 50
 
 # Orchestrator remember blocks: fenced or inline, mirroring the delegation
@@ -38,11 +38,16 @@ _REMEMBER_RE = re.compile(
 
 
 async def get_memories(db, scopes: list[str], limit: int = MAX_PROMPT_MEMORIES) -> list[Memory]:
-    """Fetch memories for the given scopes, oldest first (stable prompt order)."""
+    """Fetch the newest memories for the given scopes in stable prompt order."""
     result = await db.execute(
-        select(Memory).where(Memory.scope.in_(scopes)).order_by(Memory.created_at).limit(limit)
+        select(Memory)
+        .where(Memory.scope.in_(scopes))
+        .order_by(Memory.created_at.desc(), Memory.id.desc())
+        .limit(limit)
     )
-    return list(result.scalars().all())
+    memories = list(result.scalars().all())
+    memories.reverse()
+    return memories
 
 
 async def save_memory(

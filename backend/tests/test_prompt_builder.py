@@ -1,15 +1,19 @@
 """Tests for the three-tier system prompt builder."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
+from vigilus.core.operator_runtime import OperatorRuntime
 from vigilus.core.prompt_builder import (
     DEFAULT_DELEGATION_FORMAT,
     DEFAULT_IDENTITY,
     PromptBuilder,
     SystemPrompt,
 )
-from vigilus.db.models import Operator, Server
+from vigilus.db.models import Memory, Operator, PermissionLevel, Provider, ProviderType, Server
 
 
 @pytest.mark.asyncio
@@ -112,6 +116,71 @@ async def test_builder_context_empty_without_servers(db_session: AsyncSession):
     builder = PromptBuilder(db=db_session)
     prompt = await builder.build()
     assert prompt.context == ""
+
+
+@pytest.mark.asyncio
+async def test_builder_context_uses_latest_50_memories_in_stable_order(
+    db_session: AsyncSession,
+):
+    """Prompt memory recall keeps the newest window and orders timestamp ties consistently."""
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    memories = [
+        Memory(
+            id=f"memory-{index:03d}",
+            scope="global",
+            content=f"memory-{index:03d}",
+            created_at=start + timedelta(minutes=min(index, 55)),
+        )
+        for index in range(60)
+    ]
+    memories.extend(
+        Memory(
+            id=f"operator-memory-{index:03d}",
+            scope="operator-1",
+            content=f"operator-memory-{index:03d}",
+            created_at=start + timedelta(days=1, minutes=min(index, 55)),
+        )
+        for index in range(60)
+    )
+    provider = Provider(
+        id="provider-1",
+        name="memory-test-provider",
+        type=ProviderType.openrouter,
+        default_model="test-model",
+        enabled=True,
+    )
+    operator = Operator(
+        id="operator-1",
+        name="Memory test operator",
+        description="Tests operator prompt memory recall",
+        permission_level=PermissionLevel.read,
+        system_prompt="You are a memory test operator.",
+    )
+    operator.provider = provider
+    db_session.add_all([*memories, provider, operator])
+    await db_session.commit()
+    set_committed_value(operator, "provider", provider)
+    set_committed_value(operator, "operator_tools", [])
+
+    prompt = await PromptBuilder(db=db_session).build()
+
+    recalled = [
+        line.removeprefix("- ")
+        for line in prompt.context.splitlines()
+        if line.startswith("- memory-")
+    ]
+    assert recalled == [f"memory-{index:03d}" for index in range(10, 60)]
+    assert "operator-memory-010" not in prompt.context
+
+    operator_prompt = await OperatorRuntime(operator)._build_system_prompt([])
+    assert operator_prompt is not None
+    operator_recalled = [
+        line.removeprefix("- ")
+        for line in operator_prompt.splitlines()
+        if line.startswith("- operator-memory-")
+    ]
+    assert operator_recalled == [f"operator-memory-{index:03d}" for index in range(10, 60)]
+    assert not any(line.startswith("- memory-") for line in operator_prompt.splitlines())
 
 
 @pytest.mark.asyncio
