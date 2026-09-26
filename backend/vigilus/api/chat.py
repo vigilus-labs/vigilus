@@ -18,7 +18,16 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vigilus.api.sse import (
+from vigilus.core.compressor import ContextCompressor, resolve_context_window
+from vigilus.core.delegation import execute_delegation, parse_delegation, strip_delegation
+from vigilus.core.events import get_event_bus
+from vigilus.core.orchestrator import (
+    OrchestratorNotConfigured,
+    load_orchestrator_config,
+    resolve_orchestrator_provider,
+)
+from vigilus.core.prompt_builder import PromptBuilder
+from vigilus.core.sse import (
     EVT_DELEGATION_RESULT,
     EVT_DELEGATION_START,
     EVT_DONE,
@@ -33,15 +42,6 @@ from vigilus.api.sse import (
     register_bridge,
     unregister_bridge,
 )
-from vigilus.core.compressor import ContextCompressor, resolve_context_window
-from vigilus.core.delegation import execute_delegation, parse_delegation, strip_delegation
-from vigilus.core.events import get_event_bus
-from vigilus.core.orchestrator import (
-    OrchestratorNotConfigured,
-    load_orchestrator_config,
-    resolve_orchestrator_provider,
-)
-from vigilus.core.prompt_builder import PromptBuilder
 from vigilus.core.stream_text import SafeTextStreamer
 from vigilus.core.tasks import TaskCancelled, await_cancelled, get_task_registry
 from vigilus.db.base import get_db, get_session_factory
@@ -135,7 +135,7 @@ async def stream_session(session_id: str):
     The frontend connects to this endpoint after sending a message.
     Events flow until the bridge is closed (turn completes or errors).
     """
-    from vigilus.api.sse import get_bridge
+    from vigilus.core.sse import get_bridge
 
     # The frontend opens this stream right after POSTing its message, so the
     # bridge may not exist yet — the POST handler still has to build the prompt

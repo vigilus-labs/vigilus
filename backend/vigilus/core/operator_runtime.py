@@ -176,7 +176,7 @@ class OperatorRuntime:
         session_id: str | None = None,
         jit_token: str | None = None,
         max_iterations: int | None = None,
-        bridge: Any | None = None,  # StreamBridge from api.sse
+        bridge: Any | None = None,  # StreamBridge from core.sse
         cancel_event: Any | None = None,  # asyncio.Event — stop when set
         unattended: bool = False,  # scheduled run — use longer JIT wait
     ) -> tuple[list[LLMMessage], list[dict[str, Any]]]:

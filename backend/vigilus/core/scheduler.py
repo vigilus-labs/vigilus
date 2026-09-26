@@ -186,7 +186,7 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
         # a scheduled run can be watched and reviewed on /chat (under the Tasks
         # tab), and any JIT request it raises is forwarded into the session
         # stream as well as the global banner.
-        from vigilus.api.sse import (
+        from vigilus.core.sse import (
             EVT_DELEGATION_RESULT,
             EVT_DELEGATION_START,
             EVT_DONE,

@@ -189,7 +189,7 @@ async def test_chat_path_session_continuity(db_session, monkeypatch):
 async def test_plan_is_relayed_before_final_reply(db_session, monkeypatch):
     """The orchestrator's pre-delegation plan reaches the channel as its own
     message, ahead of the final answer — and the final isn't double-posted."""
-    from vigilus.api.sse import EVT_DELEGATION_START, EVT_TEXT_DELTA
+    from vigilus.core.sse import EVT_DELEGATION_START, EVT_TEXT_DELTA
 
     await _seed_account("telegram", "u1", allowed=True)
 
@@ -218,7 +218,7 @@ async def test_plan_is_relayed_before_final_reply(db_session, monkeypatch):
 async def test_final_only_turn_is_not_double_posted(db_session, monkeypatch):
     """A turn with no delegation publishes its answer as text_delta too; the
     buffered prose must not be sent on top of the router's final reply."""
-    from vigilus.api.sse import EVT_TEXT_DELTA
+    from vigilus.core.sse import EVT_TEXT_DELTA
 
     await _seed_account("telegram", "u1", allowed=True)
 

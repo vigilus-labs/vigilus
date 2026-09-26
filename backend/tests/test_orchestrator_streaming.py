@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 
 from vigilus.api.chat import _run_orchestrator
-from vigilus.api.sse import EVT_TEXT_CHUNK, EVT_TEXT_DELTA, StreamBridge
+from vigilus.core.sse import EVT_TEXT_CHUNK, EVT_TEXT_DELTA, StreamBridge
 from vigilus.providers.base import AgentLLM, LLMMessage, LLMResponse, emit_text
 
 PLAN = "I'll have the Systems Operator SSH into every server and check for updates."

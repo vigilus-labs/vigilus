@@ -11,8 +11,8 @@ import pytest
 from sqlalchemy import select
 
 from vigilus.api import chat as chat_api
-from vigilus.api.sse import get_bridge  # Task 2 rewrites this to vigilus.core.sse
 from vigilus.core import orchestrator as orch
+from vigilus.core.sse import get_bridge  # Task 2 rewrites this to vigilus.core.sse
 from vigilus.core.tasks import get_task_registry
 from vigilus.db.models import Message, MessageRole, Operator, Provider, ProviderType
 from vigilus.db.models import Session as ChatSession
