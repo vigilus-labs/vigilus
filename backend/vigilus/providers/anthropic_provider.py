@@ -17,12 +17,13 @@ from vigilus.providers.base import (
     ToolUse,
     emit_text,
 )
+from vigilus.providers.catalog import ANTHROPIC_DEFAULT_MODEL
 
 
 class AnthropicProvider(AgentLLM):
     """Adapter for Anthropic's Claude models."""
 
-    def __init__(self, api_key: str, default_model: str = "claude-3-5-sonnet-20241022"):
+    def __init__(self, api_key: str, default_model: str = ANTHROPIC_DEFAULT_MODEL):
         self.api_key = api_key
         self.default_model = default_model
         self.client = anthropic.AsyncAnthropic(api_key=api_key)

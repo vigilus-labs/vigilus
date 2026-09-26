@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import json
 
-from vigilus.api.chat import _run_orchestrator
-from vigilus.api.sse import EVT_TEXT_CHUNK, EVT_TEXT_DELTA, StreamBridge
+from vigilus.core.orchestrator_loop import run_orchestrator
+from vigilus.core.sse import EVT_TEXT_CHUNK, EVT_TEXT_DELTA, StreamBridge
 from vigilus.providers.base import AgentLLM, LLMMessage, LLMResponse, emit_text
 
 PLAN = "I'll have the Systems Operator SSH into every server and check for updates."
@@ -69,9 +69,9 @@ async def test_plan_is_streamed_before_the_delegation_runs(db_session, monkeypat
             "tool_calls": [],
         }
 
-    monkeypatch.setattr("vigilus.api.chat.execute_delegation", _fake_delegation)
+    monkeypatch.setattr("vigilus.core.orchestrator_loop.execute_delegation", _fake_delegation)
 
-    await _run_orchestrator(
+    await run_orchestrator(
         [LLMMessage(role="user", content="check my servers for updates")],
         StreamingProvider([REPLY, "All servers checked — web01 has 4 updates."]),
         "system",
@@ -96,9 +96,9 @@ async def test_delegation_json_is_never_streamed_to_the_user(db_session, monkeyp
             "tool_calls": [],
         }
 
-    monkeypatch.setattr("vigilus.api.chat.execute_delegation", _fake_delegation)
+    monkeypatch.setattr("vigilus.core.orchestrator_loop.execute_delegation", _fake_delegation)
 
-    await _run_orchestrator(
+    await run_orchestrator(
         [LLMMessage(role="user", content="check my servers")],
         StreamingProvider([REPLY, "All done."]),
         "system",
@@ -119,9 +119,9 @@ async def test_final_text_delta_still_closes_each_message(db_session, monkeypatc
     async def _fake_delegation(*args, **kwargs):
         return {"status": "success", "operator": "Systems Operator", "response": "ok"}
 
-    monkeypatch.setattr("vigilus.api.chat.execute_delegation", _fake_delegation)
+    monkeypatch.setattr("vigilus.core.orchestrator_loop.execute_delegation", _fake_delegation)
 
-    await _run_orchestrator(
+    await run_orchestrator(
         [LLMMessage(role="user", content="check my servers")],
         StreamingProvider([REPLY, "All done."]),
         "system",

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from vigilus.api.chat import _run_orchestrator
+from vigilus.core.orchestrator_loop import run_orchestrator
 from vigilus.providers.base import AgentLLM, LLMMessage, LLMResponse
 
 
@@ -54,7 +54,7 @@ async def _fake_delegation(*args, **kwargs):
 
 
 async def test_empty_final_reply_is_retried(db_session, monkeypatch):
-    monkeypatch.setattr("vigilus.api.chat.execute_delegation", _fake_delegation)
+    monkeypatch.setattr("vigilus.core.orchestrator_loop.execute_delegation", _fake_delegation)
     provider = ScriptedProvider(
         [
             _delegation_json(),  # 1: delegate
@@ -63,7 +63,7 @@ async def test_empty_final_reply_is_retried(db_session, monkeypatch):
         ]
     )
 
-    msgs = await _run_orchestrator(
+    msgs = await run_orchestrator(
         [LLMMessage(role="user", content="scan my network")],
         provider,
         "system prompt",
@@ -79,10 +79,10 @@ async def test_empty_final_reply_is_retried(db_session, monkeypatch):
 
 
 async def test_empty_twice_falls_back_to_operator_report(db_session, monkeypatch):
-    monkeypatch.setattr("vigilus.api.chat.execute_delegation", _fake_delegation)
+    monkeypatch.setattr("vigilus.core.orchestrator_loop.execute_delegation", _fake_delegation)
     provider = ScriptedProvider([_delegation_json(), "", ""])
 
-    msgs = await _run_orchestrator(
+    msgs = await run_orchestrator(
         [LLMMessage(role="user", content="scan my network")],
         provider,
         "system prompt",
@@ -98,7 +98,7 @@ async def test_empty_twice_falls_back_to_operator_report(db_session, monkeypatch
 async def test_empty_without_delegation_gets_notice(db_session):
     provider = ScriptedProvider(["", "  \n "])
 
-    msgs = await _run_orchestrator(
+    msgs = await run_orchestrator(
         [LLMMessage(role="user", content="hello")],
         provider,
         "system prompt",
@@ -113,7 +113,7 @@ async def test_empty_without_delegation_gets_notice(db_session):
 async def test_nonempty_reply_unaffected(db_session):
     provider = ScriptedProvider(["Just a normal answer."])
 
-    msgs = await _run_orchestrator(
+    msgs = await run_orchestrator(
         [LLMMessage(role="user", content="hello")],
         provider,
         "system prompt",

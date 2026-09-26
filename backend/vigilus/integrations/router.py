@@ -63,7 +63,7 @@ class _StatusController:
         self._tasks: list = []
 
     def bridge(self):
-        from vigilus.api.sse import EVT_DELEGATION_START, EVT_TEXT_DELTA, StreamBridge
+        from vigilus.core.sse import EVT_DELEGATION_START, EVT_TEXT_DELTA, StreamBridge
 
         def _on_event(event: str, data: dict) -> None:
             if event == EVT_TEXT_DELTA:

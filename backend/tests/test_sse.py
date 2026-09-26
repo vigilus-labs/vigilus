@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from vigilus.api.sse import SSEEvent, StreamBridge, get_bridge, register_bridge, unregister_bridge
+from vigilus.core.sse import SSEEvent, StreamBridge, get_bridge, register_bridge, unregister_bridge
 
 
 def test_sse_event_encode():

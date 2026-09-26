@@ -1,12 +1,17 @@
 """Shared orchestrator turn — the one place a turn runs.
 
-Extracts the build → orchestrate → persist sequence that was previously
-inlined in ``api/chat.py`` (``send_message``) and ``core/scheduler.py``
-(``execute_scheduled_task``) so the channel gateway reuses identical
-behaviour. Three front doors, one code path.
+Web chat (``api/chat.py``), the scheduler (``core/scheduler.py``) and the
+channel gateway (``integrations/router.py``) all run turns through here:
+build the prompt → save the user message → compress → orchestrate → persist.
+Front doors own only their transport (HTTP response, SSE bridge, task
+registration, channel replies).
 """
 
 from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass
+from typing import Any
 
 import structlog
 from sqlalchemy import select
@@ -17,45 +22,77 @@ from vigilus.core.orchestrator import (
     load_orchestrator_config,
     resolve_orchestrator_provider,
 )
+from vigilus.core.orchestrator_loop import load_db_messages_as_llm, run_orchestrator
 from vigilus.core.prompt_builder import PromptBuilder
+from vigilus.core.sse import StreamBridge
 from vigilus.db.models import Message, MessageRole, Session
 
 logger = structlog.get_logger(__name__)
 
 
-async def run_turn(
+@dataclass
+class TurnResult:
+    """What a turn produced.
+
+    ``text`` is the last plain-text assistant reply (what the scheduler and
+    channels send on). ``assistant_message`` is the last assistant row
+    persisted, which can be a delegation plan when the turn stopped early.
+    ``user_message`` is the saved user row, or ``None`` when the caller asked
+    not to save one.
+    """
+
+    text: str
+    assistant_message: Message | None
+    user_message: Message | None
+
+
+def turn_title(session: Session, user_text: str) -> str | None:
+    """The title *session* has once a turn for *user_text* auto-titles it.
+
+    Untitled / "New Chat" sessions take the first line of the message; first
+    lines longer than 60 characters are cut to 57 plus an ellipsis. Anything
+    else keeps its title.
+    """
+    if session.title and session.title != "New Chat":
+        return session.title
+    first = user_text.strip().splitlines()[0] if user_text.strip() else ""
+    if not first:
+        return session.title
+    return (first[:57] + "…") if len(first) > 60 else first
+
+
+async def execute_turn(
     db: AsyncSession,
     session: Session,
     user_text: str,
     *,
-    bridge=None,
-    cancel_event=None,
+    bridge: StreamBridge | None = None,
+    cancel_event: asyncio.Event | None = None,
     system_extra: str | None = None,
     save_user_message: bool = True,
     auto_title: bool = True,
     unattended: bool = False,
-) -> str:
-    """Persist the user message, run the orchestrator to completion, persist the
-    replies, and return the final assistant text.
+) -> TurnResult:
+    """Persist the user message, run the orchestrator to completion, persist
+    the replies, and return what was produced.
 
-    Shared by chat (optionally — see note), scheduler, and the channel gateway.
-    Raises ``OrchestratorNotConfigured`` if no provider is set up.
+    Raises ``OrchestratorNotConfigured`` (before saving anything) if no
+    provider is set up.
 
     Args:
-        db: Active async DB session (caller commits are handled inside).
+        db: Active async DB session (commits are handled inside).
         session: The ``Session`` row this turn belongs to.
         user_text: The text to feed the orchestrator as a user message.
         bridge: Optional ``StreamBridge`` for live SSE-style events.
         cancel_event: Optional ``asyncio.Event``; the loop stops when set.
-        system_extra: Extra text appended to the rendered system prompt.
+        system_extra: Extra text appended to the rendered system prompt,
+            including after a compression rebuild.
         save_user_message: Persist ``user_text`` as a ``Message`` row first.
-        auto_title: Auto-title an untitled/"New Chat" session from the first
-            line of ``user_text``. Callers that set a custom title (e.g. the
+        auto_title: Auto-title an untitled/"New Chat" session (see
+            :func:`turn_title`). Callers that set a custom title (e.g. the
             scheduler) should pass ``False``.
+        unattended: Scheduled run — operators use the longer JIT wait.
     """
-    # Imported here to avoid a circular import (api.chat imports core modules).
-    from vigilus.api.chat import _load_db_messages_as_llm, _run_orchestrator
-
     provider, provider_row, model = await resolve_orchestrator_provider(db)
     cfg = load_orchestrator_config()
 
@@ -65,12 +102,12 @@ async def run_turn(
     if system_extra:
         system_prompt += "\n\n" + system_extra
 
+    user_message: Message | None = None
     if save_user_message:
-        db.add(Message(session_id=session.id, role=MessageRole.user, content=user_text))
-        if auto_title and (not session.title or session.title == "New Chat"):
-            first = user_text.strip().splitlines()[0] if user_text.strip() else ""
-            if first:
-                session.title = (first[:57] + "…") if len(first) > 60 else first
+        user_message = Message(session_id=session.id, role=MessageRole.user, content=user_text)
+        db.add(user_message)
+        if auto_title:
+            session.title = turn_title(session, user_text)
         await db.commit()
 
     rows = (
@@ -82,7 +119,7 @@ async def run_turn(
         .scalars()
         .all()
     )
-    llm_history = _load_db_messages_as_llm(list(rows))
+    llm_history = load_db_messages_as_llm(list(rows))
 
     compressor = ContextCompressor(
         provider=provider,
@@ -93,6 +130,7 @@ async def run_turn(
         llm_history, system_tokens=len(system_prompt) // 4
     )
     if summary:
+        logger.info("turn.compressed", session_id=session.id)
         prompt_obj = await builder.rebuild_volatile(
             prompt_obj,
             memory_context=("[Previous conversation was compressed. Summary:]\n" + summary),
@@ -101,7 +139,7 @@ async def run_turn(
         if system_extra:
             system_prompt += "\n\n" + system_extra
 
-    new_msgs = await _run_orchestrator(
+    new_msgs = await run_orchestrator(
         llm_history,
         provider,
         system_prompt,
@@ -116,17 +154,34 @@ async def run_turn(
     )
 
     final_text = ""
+    assistant_message: Message | None = None
     for m in new_msgs:
         role = MessageRole(m["role"])
-        db.add(
-            Message(
-                session_id=session.id,
-                role=role,
-                content=m["content"],
-                operator_id=m.get("operator_id"),
-            )
+        row = Message(
+            session_id=session.id,
+            role=role,
+            content=m["content"],
+            operator_id=m.get("operator_id"),
         )
-        if role == MessageRole.assistant and isinstance(m["content"], str):
-            final_text = m["content"]
+        db.add(row)
+        if role == MessageRole.assistant:
+            assistant_message = row
+            if isinstance(m["content"], str):
+                final_text = m["content"]
     await db.commit()
-    return final_text
+    if assistant_message is not None:
+        await db.refresh(assistant_message)
+
+    return TurnResult(
+        text=final_text, assistant_message=assistant_message, user_message=user_message
+    )
+
+
+async def run_turn(db: AsyncSession, session: Session, user_text: str, **kwargs: Any) -> str:
+    """Run a turn and return the final assistant text.
+
+    Takes the same keyword arguments as :func:`execute_turn`. Used by the
+    scheduler and the channel gateway, which only need the reply text.
+    """
+    result = await execute_turn(db, session, user_text, **kwargs)
+    return result.text

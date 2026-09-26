@@ -8,6 +8,7 @@ from vigilus.core.crypto import decrypt
 from vigilus.db.models import Provider, ProviderType
 from vigilus.providers.anthropic_provider import AnthropicProvider
 from vigilus.providers.base import AgentLLM
+from vigilus.providers.catalog import ANTHROPIC_DEFAULT_MODEL
 from vigilus.providers.google_provider import GoogleProvider
 from vigilus.providers.openai_compat import OpenAICompatProvider
 from vigilus.providers.openai_provider import OpenAIProvider
@@ -29,7 +30,7 @@ def build_provider(provider_row: Provider) -> AgentLLM:
     if provider_row.type == ProviderType.anthropic:
         return AnthropicProvider(
             api_key=api_key or "sk-ant-dummy",
-            default_model=provider_row.default_model or "claude-3-5-sonnet-20241022",
+            default_model=provider_row.default_model or ANTHROPIC_DEFAULT_MODEL,
         )
     elif provider_row.type == ProviderType.openai:
         return OpenAIProvider(

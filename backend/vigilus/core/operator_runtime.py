@@ -176,7 +176,7 @@ class OperatorRuntime:
         session_id: str | None = None,
         jit_token: str | None = None,
         max_iterations: int | None = None,
-        bridge: Any | None = None,  # StreamBridge from api.sse
+        bridge: Any | None = None,  # StreamBridge from core.sse
         cancel_event: Any | None = None,  # asyncio.Event — stop when set
         unattended: bool = False,  # scheduled run — use longer JIT wait
     ) -> tuple[list[LLMMessage], list[dict[str, Any]]]:
@@ -304,9 +304,6 @@ class OperatorRuntime:
                 )
                 # Store raw response for Anthropic's format (needed for tool_result blocks)
                 if hasattr(response, "raw") and response.raw:
-                    assistant_msg.raw = response.raw
-                # For OpenAI compatibility, also store raw
-                elif hasattr(response, "raw") and response.raw:
                     assistant_msg.raw = response.raw
 
                 messages.append(assistant_msg)

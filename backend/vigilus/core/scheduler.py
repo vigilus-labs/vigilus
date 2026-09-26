@@ -150,8 +150,6 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
 
     ``force=True`` (manual "Run now") executes even when the task is disabled.
     """
-    # Imported here to avoid a circular import at module load
-    # (core.turn imports api.chat, which imports core modules).
     from vigilus.core.events import get_event_bus
     from vigilus.core.orchestrator import OrchestratorNotConfigured
 
@@ -186,7 +184,7 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
         # a scheduled run can be watched and reviewed on /chat (under the Tasks
         # tab), and any JIT request it raises is forwarded into the session
         # stream as well as the global banner.
-        from vigilus.api.sse import (
+        from vigilus.core.sse import (
             EVT_DELEGATION_RESULT,
             EVT_DELEGATION_START,
             EVT_DONE,
