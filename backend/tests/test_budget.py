@@ -14,7 +14,6 @@ from zoneinfo import ZoneInfo
 import pytest
 from httpx import AsyncClient
 
-from vigilus.api.chat import _run_orchestrator
 from vigilus.core import budget as budget_mod
 from vigilus.core import orchestrator as orch
 from vigilus.core.budget import (
@@ -25,6 +24,7 @@ from vigilus.core.budget import (
     month_start,
     turn_budget_stop,
 )
+from vigilus.core.orchestrator_loop import run_orchestrator
 from vigilus.db.models import (
     LlmUsage,
     Operator,
@@ -183,7 +183,7 @@ async def test_orchestrator_loop_stops_on_budget(db_session, monkeypatch):
     monkeypatch.setattr(budget_mod, "global_limit", lambda: 10.0)
 
     provider = RecordingProvider()
-    msgs = await _run_orchestrator(
+    msgs = await run_orchestrator(
         [LLMMessage(role="user", content="do something expensive")],
         provider,
         "system prompt",
@@ -209,7 +209,7 @@ async def test_orchestrator_loop_unaffected_without_budget(db_session):
             return True
 
     provider = WorkingProvider()
-    msgs = await _run_orchestrator(
+    msgs = await run_orchestrator(
         [LLMMessage(role="user", content="hello")],
         provider,
         "system prompt",

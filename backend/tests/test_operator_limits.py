@@ -28,9 +28,9 @@ def test_cap_tool_output_keeps_head_tail_and_marker():
 
 
 def test_format_delegation_result_flags_iteration_limit():
-    from vigilus.api.chat import _format_delegation_result
+    from vigilus.core.orchestrator_loop import format_delegation_result
 
-    text = _format_delegation_result(
+    text = format_delegation_result(
         {
             "status": "success",
             "operator": "Recon",

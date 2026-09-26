@@ -17,6 +17,7 @@ from vigilus.core.orchestrator import (
     load_orchestrator_config,
     resolve_orchestrator_provider,
 )
+from vigilus.core.orchestrator_loop import load_db_messages_as_llm, run_orchestrator
 from vigilus.core.prompt_builder import PromptBuilder
 from vigilus.db.models import Message, MessageRole, Session
 
@@ -53,9 +54,6 @@ async def run_turn(
             line of ``user_text``. Callers that set a custom title (e.g. the
             scheduler) should pass ``False``.
     """
-    # Imported here to avoid a circular import (api.chat imports core modules).
-    from vigilus.api.chat import _load_db_messages_as_llm, _run_orchestrator
-
     provider, provider_row, model = await resolve_orchestrator_provider(db)
     cfg = load_orchestrator_config()
 
@@ -82,7 +80,7 @@ async def run_turn(
         .scalars()
         .all()
     )
-    llm_history = _load_db_messages_as_llm(list(rows))
+    llm_history = load_db_messages_as_llm(list(rows))
 
     compressor = ContextCompressor(
         provider=provider,
@@ -101,7 +99,7 @@ async def run_turn(
         if system_extra:
             system_prompt += "\n\n" + system_extra
 
-    new_msgs = await _run_orchestrator(
+    new_msgs = await run_orchestrator(
         llm_history,
         provider,
         system_prompt,

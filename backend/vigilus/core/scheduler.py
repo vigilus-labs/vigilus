@@ -150,8 +150,6 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
 
     ``force=True`` (manual "Run now") executes even when the task is disabled.
     """
-    # Imported here to avoid a circular import at module load
-    # (core.turn imports api.chat, which imports core modules).
     from vigilus.core.events import get_event_bus
     from vigilus.core.orchestrator import OrchestratorNotConfigured
 
