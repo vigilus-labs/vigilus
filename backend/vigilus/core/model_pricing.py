@@ -171,12 +171,21 @@ def lookup_price_per_mtok(
     return models[best] if best else None
 
 
+# Anthropic 5-minute ephemeral prompt-cache rates, as a multiple of the input
+# price. Cache reads are a tenth; cache writes are 1.25×. Applied only when
+# the usage row actually carries cache token counts.
+CACHE_READ_INPUT_MULTIPLIER = 0.1
+CACHE_WRITE_INPUT_MULTIPLIER = 1.25
+
+
 def estimate_static_cost(
     provider_type: str | None,
     model: str | None,
     input_tokens: int,
     output_tokens: int,
     *,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
     table: dict[str, dict[str, tuple[float, float]]] | None = None,
 ) -> float | None:
     """Estimate USD cost from published list prices, or None if unpriced."""
@@ -188,4 +197,9 @@ def estimate_static_cost(
         return None
     if inp < 0 or outp < 0:
         return None
-    return (input_tokens * inp / 1_000_000) + (output_tokens * outp / 1_000_000)
+    return (
+        (input_tokens * inp / 1_000_000)
+        + (cache_read_tokens * inp * CACHE_READ_INPUT_MULTIPLIER / 1_000_000)
+        + (cache_write_tokens * inp * CACHE_WRITE_INPUT_MULTIPLIER / 1_000_000)
+        + (output_tokens * outp / 1_000_000)
+    )

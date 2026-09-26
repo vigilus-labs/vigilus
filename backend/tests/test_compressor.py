@@ -216,3 +216,45 @@ async def test_exact_count_can_cancel_a_high_heuristic():
     assert summary is None
     provider.complete.assert_not_called()
     provider.count_tokens.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_compressor_calls_the_summarizer_model_and_records_it(db_session):
+    from sqlalchemy import select
+
+    from vigilus.db.models import LlmUsage, UsageActorType
+
+    seen: dict = {}
+
+    class Summarizer:
+        default_model = "claude-haiku-4-5"
+
+        async def complete(self, messages, **kwargs):
+            seen.update(kwargs)
+            return LLMResponse(
+                content="Kept the decision to patch nginx.",
+                usage={"input_tokens": 12, "output_tokens": 4},
+            )
+
+    async def resolve_summary():
+        return Summarizer(), "claude-haiku-4-5", None, "anthropic"
+
+    msgs = [LLMMessage(role="user", content="x" * 400) for _ in range(20)]
+    compressor = ContextCompressor(
+        provider=AsyncMock(),
+        model="claude-opus-4-8",
+        max_tokens=500,
+        trigger_threshold=0.5,
+        resolve_summary=resolve_summary,
+    )
+    _result, summary = await compressor.compress_if_needed(msgs)
+
+    assert summary is not None
+    assert seen["model"] == "claude-haiku-4-5"
+    assert seen.get("cache_conversation", False) is False
+    rows = (await db_session.execute(select(LlmUsage))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].actor_type == UsageActorType.compression
+    assert rows[0].model == "claude-haiku-4-5"
+    assert rows[0].operator_id is None
+    assert rows[0].input_tokens == 12

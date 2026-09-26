@@ -735,6 +735,8 @@ export type UsageWindow = 'today' | '7d' | '30d' | 'all';
 export interface UsageTotals {
   input_tokens: number;
   output_tokens: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
   total_tokens: number;
   estimated_cost_usd: number | null;
 }
@@ -767,6 +769,7 @@ export interface UsageSeriesPoint {
   bucket: string;
   orchestrator_tokens: number;
   operator_tokens: number;
+  compression_tokens?: number;
   total_tokens: number;
   estimated_cost_usd: number | null;
 }

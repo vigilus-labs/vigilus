@@ -142,6 +142,7 @@ class FindingSeverity(str, enum.Enum):
 class UsageActorType(str, enum.Enum):
     orchestrator = "orchestrator"
     operator = "operator"
+    compression = "compression"
 
 
 # ────────────────────────────────────────────────────────────
@@ -724,4 +725,8 @@ class LlmUsage(Base):
     model = Column(String(255), nullable=True)
     input_tokens = Column(Integer, nullable=False, default=0)
     output_tokens = Column(Integer, nullable=False, default=0)
+    # Additive to input_tokens (Anthropic accounting). Zero when the provider
+    # does not report a cache.
+    cache_read_tokens = Column(Integer, nullable=False, default=0, server_default="0")
+    cache_write_tokens = Column(Integer, nullable=False, default=0, server_default="0")
     estimated_cost_usd = Column(Float, nullable=True)

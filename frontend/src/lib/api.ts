@@ -59,6 +59,9 @@ import type {
 export interface OrchestratorConfig {
   provider_id: string | null;
   model: string | null;
+  router_model?: string | null;
+  summarizer_provider_id?: string | null;
+  summarizer_model?: string | null;
   system_prompt: string;
   custom_identity?: string | null;
   soul?: string | null;
@@ -69,6 +72,9 @@ export interface OrchestratorConfig {
 export interface OrchestratorConfigUpdate {
   provider_id?: string | null;
   model?: string | null;
+  router_model?: string | null;
+  summarizer_provider_id?: string | null;
+  summarizer_model?: string | null;
   system_prompt?: string | null;
   custom_identity?: string | null;
   soul?: string | null;

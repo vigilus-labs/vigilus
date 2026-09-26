@@ -41,6 +41,21 @@ _ITERATION_LIMIT_FALLBACK = (
 )
 
 
+def _coerce_prompt(built: Any) -> tuple[str | None, str | None]:
+    """Normalize a system-prompt result into ``(cached, volatile)``.
+
+    The real builder returns that pair. Callers and tests that still return a
+    single string (or None) are treated as an uncached prompt.
+    """
+    if isinstance(built, tuple):
+        cached = built[0] if built else None
+        volatile = built[1] if len(built) > 1 else None
+        return (cached or None), (volatile or None)
+    if isinstance(built, str) and built:
+        return None, built
+    return None, None
+
+
 def cap_tool_output(text: str, max_chars: int) -> str:
     """Keep the head and tail of an oversized tool result.
 
@@ -129,36 +144,23 @@ class OperatorRuntime:
             )
         return tools
 
-    async def _build_system_prompt(self, tools: list[ToolSpec]) -> str | None:
-        """Compose the operator's system prompt: base + soul + recalled memories.
+    async def _build_system_prompt(self, tools: list[ToolSpec]) -> tuple[str | None, str | None]:
+        """Compose ``(cached stable prompt, volatile memories)``.
 
-        Memories from the "global" scope (shared environment knowledge) and the
-        operator's own scope are injected so the operator retains what it has
-        learned about the environment across sessions.
+        The stable block is the operator prompt, soul, and memory-tool
+        instructions. Recalled memories change often and stay after the cache
+        breakpoint.
         """
         from vigilus.core.memory import get_memories, render_memory_block
         from vigilus.db.base import get_session_factory
 
-        parts: list[str] = []
+        stable: list[str] = []
         if self.operator.system_prompt:
-            parts.append(self.operator.system_prompt)
+            stable.append(self.operator.system_prompt)
         if self.operator.soul:
-            parts.append(f"## Your soul\n\n{self.operator.soul.strip()}")
-
-        try:
-            factory = get_session_factory()
-            async with factory() as db:
-                memories = await get_memories(db, ["global", self.operator.id])
-            block = render_memory_block(memories)
-            if block:
-                parts.append(block)
-        except Exception as e:
-            logger.warning(
-                "operator.memory_recall_failed", operator=self.operator.name, error=str(e)
-            )
-
+            stable.append(f"## Your soul\n\n{self.operator.soul.strip()}")
         if any(t.name == "memory_save" for t in tools):
-            parts.append(
+            stable.append(
                 "## Learning the environment\n\n"
                 "When you discover a durable fact worth keeping — what a server's role "
                 "is, what services it runs, an environment quirk, a user preference — "
@@ -168,7 +170,21 @@ class OperatorRuntime:
                 "current CPU usage or one-off command output."
             )
 
-        return "\n\n".join(parts) if parts else None
+        volatile: str | None = None
+        try:
+            factory = get_session_factory()
+            async with factory() as db:
+                memories = await get_memories(db, ["global", self.operator.id])
+            block = render_memory_block(memories)
+            if block:
+                volatile = block
+        except Exception as e:
+            logger.warning(
+                "operator.memory_recall_failed", operator=self.operator.name, error=str(e)
+            )
+
+        cached = "\n\n".join(stable) if stable else None
+        return cached, volatile
 
     async def run(
         self,
@@ -195,7 +211,7 @@ class OperatorRuntime:
               - A list of tool call history dicts (for logging).
         """
         tools = await self._get_tools()
-        system_prompt = await self._build_system_prompt(tools)
+        cached_system, system_prompt = _coerce_prompt(await self._build_system_prompt(tools))
         tool_history: list[dict[str, Any]] = []
 
         from vigilus.config import get_settings
@@ -250,15 +266,18 @@ class OperatorRuntime:
                 tool_count=len(tools),
             )
 
-            await self._fit_context(messages)
+            await self._fit_context(messages, session_id=session_id)
 
             try:
                 response = await await_cancelled(
                     self.provider.complete(
                         messages=messages,
                         system=system_prompt,
+                        cached_system=cached_system,
+                        cache_conversation=True,
                         tools=tools,
                         temperature=0.0,
+                        model=self._model,
                     ),
                     cancel_event,
                     timeout=settings.llm_request_timeout_seconds,
@@ -479,6 +498,7 @@ class OperatorRuntime:
                 messages,
                 system_prompt,
                 tool_history,
+                cached_system=cached_system,
                 max_iterations=max_iterations,
                 session_id=session_id,
                 cancel_event=cancel_event,
@@ -487,19 +507,39 @@ class OperatorRuntime:
 
         return messages, tool_history
 
-    async def _fit_context(self, messages: list[LLMMessage]) -> None:
+    async def _fit_context(self, messages: list[LLMMessage], *, session_id: str | None) -> None:
         """Drop old tool bodies, then summarize if the window is still full."""
         from vigilus.core.compressor import (
             ContextCompressor,
             elide_old_tool_results,
             resolve_context_window,
         )
+        from vigilus.core.orchestrator import resolve_summarizer
+        from vigilus.db.base import get_session_factory
 
         elided = elide_old_tool_results(messages)
         if elided is not messages:
             messages[:] = elided
         window = resolve_context_window(self._provider_row, self._model)
-        compressor = ContextCompressor(self.provider, model=self._model, max_tokens=window)
+
+        async def _resolve_summary():
+            factory = get_session_factory()
+            async with factory() as db:
+                sum_provider, sum_row, sum_model = await resolve_summarizer(
+                    db,
+                    fallback_provider_row=self._provider_row,
+                    fallback_model=self._model,
+                )
+            sum_type = sum_row.type.value if hasattr(sum_row.type, "value") else str(sum_row.type)
+            return sum_provider, sum_model, sum_row.id, sum_type
+
+        compressor = ContextCompressor(
+            self.provider,
+            model=self._model,
+            max_tokens=window,
+            session_id=session_id,
+            resolve_summary=_resolve_summary,
+        )
         compressed, _summary = await compressor.compress_if_needed(messages)
         if compressed is not messages:
             messages[:] = compressed
@@ -510,6 +550,7 @@ class OperatorRuntime:
         system_prompt: str | None,
         tool_history: list[dict[str, Any]],
         *,
+        cached_system: str | None = None,
         max_iterations: int,
         session_id: str | None,
         cancel_event: Any | None,
@@ -526,8 +567,11 @@ class OperatorRuntime:
             self.provider.complete(
                 messages=messages,
                 system=system_prompt,
+                cached_system=cached_system,
+                cache_conversation=True,
                 tools=None,
                 temperature=0.0,
+                model=self._model,
             ),
             cancel_event,
             timeout=settings.llm_request_timeout_seconds,

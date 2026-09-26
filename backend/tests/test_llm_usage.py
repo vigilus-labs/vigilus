@@ -352,6 +352,40 @@ async def test_summary_top_sessions_ranked_with_titles(db_session):
 
 
 @pytest.mark.asyncio
+async def test_cache_tokens_are_priced_and_compression_is_its_own_line(db_session):
+    await record_llm_usage(
+        usage={
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_read_tokens": 1_000_000,
+        },
+        actor_type=UsageActorType.orchestrator,
+        provider_type="anthropic",
+        model="claude-opus-5",
+    )
+    await record_llm_usage(
+        usage={"input_tokens": 100, "output_tokens": 20},
+        actor_type=UsageActorType.compression,
+        provider_type="anthropic",
+        model="claude-haiku-4-5",
+    )
+
+    summary = await get_usage_summary(db_session, "all")
+    assert summary["totals"]["cache_read_tokens"] == 1_000_000
+    assert summary["totals"]["total_tokens"] == 1_000_000 + 120
+    names = {a["name"]: a for a in summary["by_actor"]}
+    assert names["Compression"]["total_tokens"] == 120
+    assert names["Compression"]["actor_type"] == "compression"
+    assert names["Compression"]["operator_id"] is None
+    # Cache read of 1M opus tokens is $0.50, not the $5 fresh-input price.
+    assert names["Vigilus"]["estimated_cost_usd"] == pytest.approx(0.5)
+    today = summary["series"][-1] if summary["series"] else None
+    assert today is not None
+    assert today["compression_tokens"] == 120
+    assert today["orchestrator_tokens"] == 1_000_000
+
+
+@pytest.mark.asyncio
 async def test_summary_empty_has_all_sections(db_session):
     summary = await get_usage_summary(db_session, "all")
     assert summary["by_model"] == []

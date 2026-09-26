@@ -17,6 +17,7 @@ from vigilus.providers.base import (
     ToolSpec,
     ToolUse,
     emit_text,
+    join_system,
     retry_transient,
 )
 
@@ -131,8 +132,17 @@ class OpenAIProvider(AgentLLM):
         tools: list[ToolSpec] | None,
         temperature: float,
         max_tokens: int,
+        model: str | None = None,
+        cached_system: str | None = None,
+        cache_conversation: bool = False,
     ) -> dict[str, Any]:
-        """Assemble the request payload shared by the streaming and plain paths."""
+        """Assemble the request payload shared by the streaming and plain paths.
+
+        ``cache_conversation`` is Anthropic-only and ignored here. The cacheable
+        prefix is still sent, joined onto the system string.
+        """
+        del cache_conversation
+        system = join_system(cached_system, system)
         openai_messages = []
         if system:
             openai_messages.append({"role": "system", "content": system})
@@ -141,7 +151,7 @@ class OpenAIProvider(AgentLLM):
         openai_tools = self._convert_tools(tools)
 
         kwargs: dict[str, Any] = {
-            "model": self.default_model,
+            "model": model or self.default_model,
             "messages": openai_messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -161,6 +171,9 @@ class OpenAIProvider(AgentLLM):
         temperature: float = 0.0,
         max_tokens: int = 4096,
         stream: bool = False,
+        model: str | None = None,
+        cached_system: str | None = None,
+        cache_conversation: bool = False,
     ) -> LLMResponse | AsyncIterator[LLMResponse]:
 
         kwargs = self._build_kwargs(
@@ -169,6 +182,9 @@ class OpenAIProvider(AgentLLM):
             tools=tools,
             temperature=temperature,
             max_tokens=max_tokens,
+            model=model,
+            cached_system=cached_system,
+            cache_conversation=cache_conversation,
         )
 
         if stream:
@@ -236,6 +252,9 @@ class OpenAIProvider(AgentLLM):
         temperature: float = 0.0,
         max_tokens: int = 4096,
         on_text: TextSink | None = None,
+        model: str | None = None,
+        cached_system: str | None = None,
+        cache_conversation: bool = False,
     ) -> LLMResponse:
         """Stream text deltas, then return the assembled final response.
 
@@ -252,6 +271,9 @@ class OpenAIProvider(AgentLLM):
                 temperature=temperature,
                 max_tokens=max_tokens,
                 on_text=on_text,
+                model=model,
+                cached_system=cached_system,
+                cache_conversation=cache_conversation,
             )
 
         kwargs = self._build_kwargs(
@@ -260,6 +282,9 @@ class OpenAIProvider(AgentLLM):
             tools=tools,
             temperature=temperature,
             max_tokens=max_tokens,
+            model=model,
+            cached_system=cached_system,
+            cache_conversation=cache_conversation,
         )
         kwargs["stream"] = True
         # Streamed responses omit usage unless it is asked for; without it the
@@ -306,6 +331,9 @@ class OpenAIProvider(AgentLLM):
                 temperature=temperature,
                 max_tokens=max_tokens,
                 on_text=on_text,
+                model=model,
+                cached_system=cached_system,
+                cache_conversation=cache_conversation,
             )
 
         content = "".join(parts)

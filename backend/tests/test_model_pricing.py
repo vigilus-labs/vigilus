@@ -85,3 +85,18 @@ def test_malformed_override_file_is_ignored(tmp_path, monkeypatch):
     assert model_pricing.estimate_static_cost(
         "anthropic", "claude-opus-5", 1_000_000, 0
     ) == pytest.approx(5.0)
+
+
+def test_cache_tokens_use_anthropic_ephemeral_rates():
+    # claude-opus-5 input is $5 / 1M. A cache read is 0.1×, a cache write 1.25×.
+    read = model_pricing.estimate_static_cost(
+        "anthropic", "claude-opus-5", 0, 0, cache_read_tokens=1_000_000
+    )
+    write = model_pricing.estimate_static_cost(
+        "anthropic", "claude-opus-5", 0, 0, cache_write_tokens=1_000_000
+    )
+    fresh = model_pricing.estimate_static_cost("anthropic", "claude-opus-5", 1_000_000, 0)
+    assert read == pytest.approx(0.5)
+    assert write == pytest.approx(6.25)
+    assert fresh == pytest.approx(5.0)
+    assert read < fresh < write
