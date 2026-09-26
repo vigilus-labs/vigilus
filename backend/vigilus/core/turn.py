@@ -9,6 +9,7 @@ registration, channel replies).
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,6 +24,7 @@ from vigilus.core.orchestrator import (
 )
 from vigilus.core.orchestrator_loop import load_db_messages_as_llm, run_orchestrator
 from vigilus.core.prompt_builder import PromptBuilder
+from vigilus.core.sse import StreamBridge
 from vigilus.db.models import Message, MessageRole, Session
 
 logger = structlog.get_logger(__name__)
@@ -47,8 +49,9 @@ class TurnResult:
 def turn_title(session: Session, user_text: str) -> str | None:
     """The title *session* has once a turn for *user_text* auto-titles it.
 
-    Untitled / "New Chat" sessions take the first line of the message,
-    trimmed to 60 characters; anything else keeps its title.
+    Untitled / "New Chat" sessions take the first line of the message; first
+    lines longer than 60 characters are cut to 57 plus an ellipsis. Anything
+    else keeps its title.
     """
     if session.title and session.title != "New Chat":
         return session.title
@@ -63,8 +66,8 @@ async def execute_turn(
     session: Session,
     user_text: str,
     *,
-    bridge=None,
-    cancel_event=None,
+    bridge: StreamBridge | None = None,
+    cancel_event: asyncio.Event | None = None,
     system_extra: str | None = None,
     save_user_message: bool = True,
     auto_title: bool = True,

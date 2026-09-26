@@ -193,6 +193,7 @@ async def test_unconfigured_orchestrator_returns_500_and_saves_nothing(
     assert "No provider configured" in res.json()["detail"]
     assert await _messages(db_session, sid) == []
     assert get_task_registry().get(sid) is None
+    assert get_bridge(sid) is None
 
 
 async def test_mention_instruction_survives_compression(

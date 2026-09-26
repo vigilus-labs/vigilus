@@ -128,11 +128,11 @@ async def stream_session(session_id: str):
     """
     from vigilus.core.sse import get_bridge
 
-    # The frontend opens this stream right after POSTing its message, so the
-    # bridge may not exist yet — the POST handler still has to build the prompt
-    # and (sometimes) compress the context first. Giving up on the first miss
-    # would drop the whole turn's live feed, including the orchestrator's plan
-    # message, leaving the user staring at a spinner until the turn finished.
+    # The frontend opens this GET stream right after POSTing its message, so
+    # this request can reach the server before the POST handler has finished
+    # registering the turn's bridge. Giving up on the first miss would drop
+    # the whole turn's live feed, including the orchestrator's plan message,
+    # leaving the user staring at a spinner until the turn finished.
     bridge = get_bridge(session_id)
     waited = 0.0
     while bridge is None and waited < _BRIDGE_WAIT_SECONDS:
@@ -377,6 +377,7 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
             },
         )
     except OrchestratorNotConfigured as e:
+        # A configuration error, not a crash — no stack trace in the logs.
         bridge.publish(EVT_ERROR, {"error": str(e)})
         bridge.publish(EVT_DONE, {"session_id": session.id})
         raise HTTPException(status_code=500, detail=str(e))
