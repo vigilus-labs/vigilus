@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from vigilus.api import chat as chat_api
 from vigilus.core import orchestrator as orch
-from vigilus.core.sse import get_bridge  # Task 2 rewrites this to vigilus.core.sse
+from vigilus.core.sse import get_bridge
 from vigilus.core.tasks import get_task_registry
 from vigilus.db.models import Message, MessageRole, Operator, Provider, ProviderType
 from vigilus.db.models import Session as ChatSession
@@ -193,3 +193,65 @@ async def test_unconfigured_orchestrator_returns_500_and_saves_nothing(
     assert "No provider configured" in res.json()["detail"]
     assert await _messages(db_session, sid) == []
     assert get_task_registry().get(sid) is None
+
+
+async def test_mention_instruction_survives_compression(
+    db_session, async_client, scripted, monkeypatch
+):
+    from vigilus.core.compressor import ContextCompressor
+
+    async def _compressed(self, messages, *, system_tokens=0):
+        return messages, "Earlier we patched nginx on web-1."
+
+    monkeypatch.setattr(ContextCompressor, "compress_if_needed", _compressed)
+    await _default_provider(db_session)
+    db_session.add(
+        Operator(name="Infra Ops", description="d", system_prompt="p", enabled=True, delegatable=True)
+    )
+    await db_session.commit()
+    provider = scripted(["On it."])
+    sid = await _new_session(async_client)
+
+    res = await async_client.post(
+        f"/api/sessions/{sid}/messages", json={"content": "@Infra Ops check disk usage"}
+    )
+
+    assert res.status_code == 200
+    assert "Earlier we patched nginx on web-1." in provider.systems[0]
+    assert "## Explicit operator selection" in provider.systems[0]
+
+
+async def test_failed_turn_returns_500_and_frees_the_session(
+    db_session, async_client, scripted, recorded_bridges, monkeypatch
+):
+    from vigilus.core.compressor import ContextCompressor
+
+    real_compress = ContextCompressor.compress_if_needed
+    calls = 0
+
+    async def _explode_once(self, messages, *, system_tokens=0):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("compressor exploded")
+        return await real_compress(self, messages, system_tokens=system_tokens)
+
+    monkeypatch.setattr(ContextCompressor, "compress_if_needed", _explode_once)
+    await _default_provider(db_session)
+    scripted(["Recovered."])  # the first turn fails before reaching the LLM
+    sid = await _new_session(async_client)
+
+    res = await async_client.post(f"/api/sessions/{sid}/messages", json={"content": "hello"})
+
+    assert res.status_code == 500
+    assert res.json()["detail"] == "compressor exploded"
+    assert get_task_registry().get(sid) is None
+    assert get_bridge(sid) is None
+    [bridge] = recorded_bridges
+    assert ("error", {"error": "compressor exploded"}) in bridge.events
+    assert ("done", {"session_id": sid}) in bridge.events
+
+    # The session isn't stuck: the next message is accepted (not a 409).
+    res = await async_client.post(f"/api/sessions/{sid}/messages", json={"content": "again"})
+    assert res.status_code == 200
+    assert res.json()["content"] == "Recovered."

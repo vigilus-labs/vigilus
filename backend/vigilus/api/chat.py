@@ -18,15 +18,8 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vigilus.core.compressor import ContextCompressor, resolve_context_window
 from vigilus.core.events import get_event_bus
-from vigilus.core.orchestrator import (
-    OrchestratorNotConfigured,
-    load_orchestrator_config,
-    resolve_orchestrator_provider,
-)
-from vigilus.core.orchestrator_loop import load_db_messages_as_llm, run_orchestrator
-from vigilus.core.prompt_builder import PromptBuilder
+from vigilus.core.orchestrator import OrchestratorNotConfigured
 from vigilus.core.sse import (
     EVT_DELEGATION_RESULT,
     EVT_DELEGATION_START,
@@ -42,8 +35,9 @@ from vigilus.core.sse import (
     unregister_bridge,
 )
 from vigilus.core.tasks import get_task_registry
+from vigilus.core.turn import execute_turn, turn_title
 from vigilus.db.base import get_db
-from vigilus.db.models import ChannelChat, Message, MessageRole, Operator, Session
+from vigilus.db.models import ChannelChat, Message, Operator, Session
 from vigilus.schemas.chat import (
     MessageCreate,
     MessageResponse,
@@ -239,6 +233,23 @@ async def _detect_mentioned_operators(content: str, db: AsyncSession) -> list[st
     return [name for _, name in sorted(found, key=lambda x: x[0])]
 
 
+async def _mention_system_extra(content: str, db: AsyncSession) -> str | None:
+    """System-prompt addition pinning delegation to @-mentioned operators."""
+    mentioned = await _detect_mentioned_operators(content, db)
+    if not mentioned:
+        return None
+    tagged = ", ".join(f'"{name}"' for name in mentioned)
+    return (
+        "## Explicit operator selection\n\n"
+        f"The user's latest message tags specific operators with @mentions: {tagged}. "
+        "Delegate the task to the tagged operator(s) exactly — and in that order if "
+        "there is more than one — using the normal delegation format. Do NOT substitute "
+        "a different operator or skip the delegation, even if another operator seems "
+        "better suited; the user has chosen deliberately. If a tagged operator cannot "
+        "do the task, report that back rather than silently picking another."
+    )
+
+
 # ── REST Endpoints ─────────────────────────────────────────
 
 
@@ -313,79 +324,11 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
             "finish or cancel it before sending another message.",
         )
 
-    # ── Resolve orchestrator provider ──────────────────────
-    orch_cfg = load_orchestrator_config()
-    try:
-        provider, provider_row, model = await resolve_orchestrator_provider(db)
-    except OrchestratorNotConfigured as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    # ── Build system prompt (three-tier) ──────────────────
-    prompt_builder = PromptBuilder(
-        db=db,
-        custom_identity=orch_cfg.custom_identity,
-        soul=orch_cfg.soul,
-    )
-    system_prompt_obj = await prompt_builder.build(session_id=session.id)
-    system_prompt = system_prompt_obj.render()
-
-    # ── Honor explicit @operator mentions ─────────────────
-    # When the user tags specific operators, direct the orchestrator to
-    # delegate to exactly those, in order, rather than choosing its own.
-    mentioned = await _detect_mentioned_operators(data.content, db)
-    if mentioned:
-        tagged = ", ".join(f'"{name}"' for name in mentioned)
-        system_prompt += (
-            "\n\n## Explicit operator selection\n\n"
-            f"The user's latest message tags specific operators with @mentions: {tagged}. "
-            "Delegate the task to the tagged operator(s) exactly — and in that order if "
-            "there is more than one — using the normal delegation format. Do NOT substitute "
-            "a different operator or skip the delegation, even if another operator seems "
-            "better suited; the user has chosen deliberately. If a tagged operator cannot "
-            "do the task, report that back rather than silently picking another."
-        )
-
-    # ── Save user message ─────────────────────────────────
-    user_msg = Message(session_id=session.id, role=MessageRole.user, content=data.content)
-    db.add(user_msg)
-
-    # Auto-title: an untitled chat takes its name from the first message
-    if not session.title or session.title == "New Chat":
-        first_line = data.content.strip().splitlines()[0] if data.content.strip() else ""
-        if first_line:
-            session.title = first_line[:57] + "…" if len(first_line) > 60 else first_line
-
-    await db.commit()
-
-    # ── Build LLM history ─────────────────────────────────
-    history = await db.execute(
-        select(Message).where(Message.session_id == session.id).order_by(Message.created_at)
-    )
-    llm_history = load_db_messages_as_llm(list(history.scalars().all()))
-
-    # ── Context compression ───────────────────────────────
-    # Estimate system prompt tokens for the compressor budget
-    system_tokens = len(system_prompt) // 4  # rough char→token estimate
-    compressor = ContextCompressor(
-        provider=provider,
-        model=model,
-        max_tokens=resolve_context_window(provider_row, model),
-    )
-    llm_history, compression_summary = await compressor.compress_if_needed(
-        llm_history,
-        system_tokens=system_tokens,
-    )
-    if compression_summary:
-        logger.info("chat.compressed", session_id=session.id)
-        # Rebuild volatile tier with compression notice
-        system_prompt_obj = await prompt_builder.rebuild_volatile(
-            system_prompt_obj,
-            memory_context=f"[Previous conversation was compressed. Summary:]\n{compression_summary}",
-        )
-        system_prompt = system_prompt_obj.render()
-
     # ── Register this turn so it can be viewed, restored, and cancelled ───
-    running_task = get_task_registry().register(session.id, session.title or "Chat")
+    # Registered before the turn runs, so title it the way the turn will.
+    running_task = get_task_registry().register(
+        session.id, turn_title(session, data.content) or "Chat"
+    )
 
     # Buffer activity-feed events on the task so a client that navigates away
     # and returns can restore what the turn has been doing.
@@ -415,47 +358,28 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
 
     event_bus.subscribe("jit.requested", _forward_jit)
 
-    # ── Run orchestrator (stream events via bridge) ───────
+    # ── Run the turn (stream events via bridge) ───────────
     try:
-        new_msgs = await run_orchestrator(
-            llm_history,
-            provider,
-            system_prompt,
-            db=db,
-            session_id=session.id,
-            provider_id=provider_row.id,
-            provider_type=provider_row.type.value,
-            model=model,
+        result = await execute_turn(
+            db,
+            session,
+            data.content,
             bridge=bridge,
             cancel_event=running_task.cancel_event,
+            # Honor explicit @operator mentions: delegate to exactly those.
+            system_extra=await _mention_system_extra(data.content, db),
         )
-
-        # ── Persist new messages (before closing the bridge so the
-        #    final done event can carry the message id) ─────
-        last_assistant = None
-        for msg_data in new_msgs:
-            role = MessageRole(msg_data["role"])
-            db_msg = Message(
-                session_id=session.id,
-                role=role,
-                content=msg_data["content"],
-                operator_id=msg_data.get("operator_id"),
-            )
-            db.add(db_msg)
-            if role == MessageRole.assistant:
-                last_assistant = db_msg  # Track for return value
-
-        await db.commit()
-        if last_assistant:
-            await db.refresh(last_assistant)
-
         bridge.publish(
             EVT_DONE,
             {
                 "session_id": session.id,
-                "message_id": last_assistant.id if last_assistant else None,
+                "message_id": result.assistant_message.id if result.assistant_message else None,
             },
         )
+    except OrchestratorNotConfigured as e:
+        bridge.publish(EVT_ERROR, {"error": str(e)})
+        bridge.publish(EVT_DONE, {"session_id": session.id})
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.exception("orchestrator.run_failed", error=str(e), session_id=session.id)
         bridge.publish(EVT_ERROR, {"error": str(e)})
@@ -467,8 +391,5 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
         bridge.close()
         unregister_bridge(session.id)
 
-    if last_assistant:
-        return _message_to_response(last_assistant)
-
-    # Fallback: return user message
-    return _message_to_response(user_msg)
+    # Fallback: return the user message if the turn produced no assistant row
+    return _message_to_response(result.assistant_message or result.user_message)
