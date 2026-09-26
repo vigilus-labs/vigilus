@@ -7,6 +7,10 @@ ProviderType values — the wizard ultimately just calls POST /api/providers.
 
 from __future__ import annotations
 
+# Fallback model for Anthropic providers with no model configured. Also the
+# preset the setup wizard offers, so the two can't drift apart.
+ANTHROPIC_DEFAULT_MODEL = "claude-opus-4-8"
+
 PROVIDER_CATALOG: list[dict] = [
     {
         "id": "anthropic",
@@ -16,7 +20,7 @@ PROVIDER_CATALOG: list[dict] = [
         "needs_base_url": False,
         "base_url": None,
         "key_url": "https://console.anthropic.com/settings/keys",
-        "default_model": "claude-opus-4-8",
+        "default_model": ANTHROPIC_DEFAULT_MODEL,
         "context_window": 200_000,
     },
     {

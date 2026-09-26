@@ -305,9 +305,6 @@ class OperatorRuntime:
                 # Store raw response for Anthropic's format (needed for tool_result blocks)
                 if hasattr(response, "raw") and response.raw:
                     assistant_msg.raw = response.raw
-                # For OpenAI compatibility, also store raw
-                elif hasattr(response, "raw") and response.raw:
-                    assistant_msg.raw = response.raw
 
                 messages.append(assistant_msg)
 

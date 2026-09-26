@@ -24,15 +24,6 @@ from vigilus.config import get_settings
 
 logger = structlog.get_logger(__name__)
 
-# Kept for backward compat / migration — the prompt_builder uses its own default.
-DEFAULT_IDENTITY = """\
-You are Vigilus, the primary security orchestrator for an IT operations platform.
-
-Your ONLY role is to receive user requests and delegate them to specialist \
-operators who have the actual tools to complete the work. You cannot run tools \
-yourself — you coordinate the operators who can.
-"""
-
 
 @dataclass
 class OrchestratorConfig:
