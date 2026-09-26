@@ -22,6 +22,9 @@ interface JitChatItem {
 interface OrchestratorConfig {
   provider_id: string | null;
   model: string | null;
+  router_model?: string | null;
+  summarizer_provider_id?: string | null;
+  summarizer_model?: string | null;
   system_prompt: string;
   soul?: string | null;
 }
@@ -138,6 +141,9 @@ export default function Chat() {
   const [configTab, setConfigTab] = useState<'provider' | 'soul'>('provider');
   const [selectedProviderId, setSelectedProviderId] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
+  const [routerModel, setRouterModel] = useState('');
+  const [summarizerProviderId, setSummarizerProviderId] = useState('');
+  const [summarizerModel, setSummarizerModel] = useState('');
   const [soulDraft, setSoulDraft] = useState('');
   const [models, setModels] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
@@ -245,7 +251,10 @@ export default function Chat() {
       const cfg = await api.getOrchestratorConfig();
       setOrchConfig(cfg);
       if (cfg.provider_id) setSelectedProviderId(cfg.provider_id);
-      if (cfg.model) setSelectedModel(cfg.model);
+      setSelectedModel(cfg.model ?? '');
+      setRouterModel(cfg.router_model ?? '');
+      setSummarizerProviderId(cfg.summarizer_provider_id ?? '');
+      setSummarizerModel(cfg.summarizer_model ?? '');
       setSoulDraft(cfg.soul ?? '');
     } catch (err) {
       console.error('Failed to load orchestrator config', err);
@@ -278,6 +287,9 @@ export default function Chat() {
       const cfg = await api.updateOrchestratorConfig({
         provider_id: selectedProviderId || null,
         model: selectedModel || null,
+        router_model: routerModel || null,
+        summarizer_provider_id: summarizerProviderId || null,
+        summarizer_model: summarizerModel || null,
         soul: soulDraft,
       });
       setOrchConfig(cfg);
@@ -1029,7 +1041,7 @@ export default function Chat() {
                     <span className="text-[13px]">
                       <span className="text-text-secondary">Model:</span>{' '}
                       <span className="font-medium text-text-primary dark:text-text-primary">
-                        {orchConfig?.model || currentProvider.default_model || 'Not set'}
+                        {orchConfig?.router_model || orchConfig?.model || currentProvider.default_model || 'Not set'}
                       </span>
                     </span>
                   ) : (
@@ -1203,6 +1215,7 @@ export default function Chat() {
                       onChange={e => {
                         setSelectedProviderId(e.target.value);
                         setSelectedModel('');
+                        setRouterModel('');
                       }}
                       className="w-full px-2.5 py-1.5 text-[13px] rounded border border-border dark:border-border bg-white dark:bg-surface text-text-primary dark:text-text-primary"
                     >
@@ -1237,6 +1250,63 @@ export default function Chat() {
                       />
                     )}
                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="block text-[11px] text-text-secondary mb-1">
+                      Router model <span className="opacity-60">(optional)</span>
+                    </label>
+                    {models.length > 0 ? (
+                      <select
+                        value={routerModel}
+                        onChange={e => setRouterModel(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-[13px] rounded border border-border dark:border-border bg-white dark:bg-surface text-text-primary dark:text-text-primary"
+                      >
+                        <option value="">Same as orchestrator model</option>
+                        {models.map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={routerModel}
+                        onChange={e => setRouterModel(e.target.value)}
+                        placeholder="Same as orchestrator model"
+                        className="w-full px-2.5 py-1.5 text-[13px] rounded border border-border dark:border-border bg-white dark:bg-surface text-text-primary dark:text-text-primary placeholder:text-text-secondary/40"
+                      />
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-text-secondary mb-1">
+                      Summarizer provider <span className="opacity-60">(optional)</span>
+                    </label>
+                    <select
+                      value={summarizerProviderId}
+                      onChange={e => setSummarizerProviderId(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-[13px] rounded border border-border dark:border-border bg-white dark:bg-surface text-text-primary dark:text-text-primary"
+                    >
+                      <option value="">Same provider as this turn</option>
+                      {providers.filter(p => p.enabled).map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="mb-3">
+                  <label className="block text-[11px] text-text-secondary mb-1">
+                    Summarizer model <span className="opacity-60">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={summarizerModel}
+                    onChange={e => setSummarizerModel(e.target.value)}
+                    placeholder="Cheap default (Haiku, mini, Flash, …)"
+                    className="w-full px-2.5 py-1.5 text-[13px] rounded border border-border dark:border-border bg-white dark:bg-surface text-text-primary dark:text-text-primary placeholder:text-text-secondary/40"
+                  />
+                  <p className="text-[11px] text-text-secondary mt-1">
+                    Compression uses this model. Leave it blank for a cheap default on Anthropic, OpenAI, Google, and OpenRouter.
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button

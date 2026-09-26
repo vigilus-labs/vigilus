@@ -11,7 +11,7 @@ import {
 import type { UsageSeriesPoint, UsageWindow } from '@/types';
 import { formatTokens, shortBucketLabel } from '../format';
 
-/** Stacked tokens over time, split Vigilus (orchestrator) vs Operators. */
+/** Stacked tokens over time: Vigilus, compression, and Operators. */
 export function UsageOverTime({
   data,
   window,
@@ -63,6 +63,16 @@ export function UsageOverTime({
             name="Vigilus"
             stroke="rgb(var(--chart-1))"
             fill="rgb(var(--chart-1))"
+            fillOpacity={0.25}
+            strokeWidth={2}
+          />
+          <Area
+            type="monotone"
+            stackId="tokens"
+            dataKey="compression_tokens"
+            name="Compression"
+            stroke="rgb(var(--chart-6))"
+            fill="rgb(var(--chart-6))"
             fillOpacity={0.25}
             strokeWidth={2}
           />

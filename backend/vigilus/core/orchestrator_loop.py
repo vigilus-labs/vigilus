@@ -86,6 +86,7 @@ async def run_orchestrator(
     provider_id: str | None = None,
     provider_type: str | None = None,
     model: str | None = None,
+    cached_system: str | None = None,
     max_delegations: int = 5,
     bridge: StreamBridge | None = None,
     cancel_event: Any | None = None,  # asyncio.Event — stop when set
@@ -169,9 +170,12 @@ async def run_orchestrator(
                 provider.complete_streaming(
                     messages=history,
                     system=system_prompt,
+                    cached_system=cached_system,
+                    cache_conversation=True,
                     tools=None,  # Orchestrator has NO tools — only delegates
                     temperature=0.0,
                     on_text=_on_text if bridge else None,
+                    model=model,
                 ),
                 cancel_event,
                 timeout=get_settings().llm_request_timeout_seconds,

@@ -55,8 +55,20 @@ def estimate_openrouter_cost(
     input_tokens: int,
     output_tokens: int,
     prices: dict[str, tuple[float, float]] | None = None,
+    *,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
 ) -> float | None:
-    """Return estimated USD cost, or None if price unknown/unusable."""
+    """Return estimated USD cost, or None if price unknown/unusable.
+
+    Cache tokens use Anthropic's ephemeral rates (0.1× read, 1.25× write of
+    the prompt price). Zero cache counts leave the estimate unchanged.
+    """
+    from vigilus.core.model_pricing import (
+        CACHE_READ_INPUT_MULTIPLIER,
+        CACHE_WRITE_INPUT_MULTIPLIER,
+    )
+
     table = prices if prices is not None else _CACHE
     if not table or not model:
         return None
@@ -68,7 +80,12 @@ def estimate_openrouter_cost(
         return None
     if prompt_p < 0 or completion_p < 0:
         return None
-    return (input_tokens * prompt_p) + (output_tokens * completion_p)
+    return (
+        (input_tokens * prompt_p)
+        + (cache_read_tokens * prompt_p * CACHE_READ_INPUT_MULTIPLIER)
+        + (cache_write_tokens * prompt_p * CACHE_WRITE_INPUT_MULTIPLIER)
+        + (output_tokens * completion_p)
+    )
 
 
 async def get_openrouter_prices() -> dict[str, tuple[float, float]]:

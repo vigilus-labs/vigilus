@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { BarChart3, Bot, Coins, Cpu, Sparkles } from 'lucide-react';
+import { BarChart3, Bot, Coins, Cpu, Layers, Sparkles } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { UsageByActor, UsageBudget, UsageSummary, UsageWindow } from '@/types';
@@ -74,6 +74,25 @@ function Panel({
 
 function isOrchestrator(row: UsageByActor): boolean {
   return row.actor_type === 'orchestrator';
+}
+
+function isCompression(row: UsageByActor): boolean {
+  return row.actor_type === 'compression';
+}
+
+function tokenDetail(row: {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+}): string {
+  const parts = [
+    `${formatTokens(row.input_tokens)} in`,
+    `${formatTokens(row.output_tokens)} out`,
+  ];
+  if (row.cache_read_tokens) parts.push(`${formatTokens(row.cache_read_tokens)} cache read`);
+  if (row.cache_write_tokens) parts.push(`${formatTokens(row.cache_write_tokens)} cache write`);
+  return parts.join(' · ');
 }
 
 function BudgetBar({ label, limit, spent }: { label: string; limit: number; spent: number }) {
@@ -164,7 +183,7 @@ export default function Usage() {
 
   const totals = data?.totals;
   const orchestrator = data?.by_actor.find(isOrchestrator);
-  const operators = (data?.by_actor ?? []).filter((r) => !isOrchestrator(r));
+  const operators = (data?.by_actor ?? []).filter((r) => !isOrchestrator(r) && !isCompression(r));
   const operatorTokens = operators.reduce((sum, r) => sum + r.total_tokens, 0);
   const grandTotal = totals?.total_tokens ?? 0;
   const empty = !!data && grandTotal === 0;
@@ -217,7 +236,7 @@ export default function Usage() {
               icon={Cpu}
               label="Total tokens"
               value={formatTokens(totals.total_tokens)}
-              hint={`${formatTokens(totals.input_tokens)} in · ${formatTokens(totals.output_tokens)} out`}
+              hint={tokenDetail(totals)}
               color="bg-accent/10 text-accent"
             />
             <StatTile
@@ -250,17 +269,19 @@ export default function Usage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Panel
               title="By actor"
-              subtitle="Vigilus is the orchestrator; every other row is an Operator."
+              subtitle="Vigilus routes, compression summarizes, and every other row is an Operator."
             >
               <div className="space-y-3">
                 {data.by_actor.map((row) => {
                   const share = percentOf(row.total_tokens, grandTotal);
                   return (
-                    <div key={`${row.actor_type}-${row.operator_id ?? 'orchestrator'}`}>
+                    <div key={`${row.actor_type}-${row.operator_id ?? row.name}`}>
                       <div className="flex items-baseline justify-between gap-3 mb-1">
                         <span className="text-sm text-text-primary truncate flex items-center gap-1.5">
                           {isOrchestrator(row) ? (
                             <Sparkles className="w-3.5 h-3.5 text-chart-1 shrink-0" />
+                          ) : isCompression(row) ? (
+                            <Layers className="w-3.5 h-3.5 text-chart-6 shrink-0" />
                           ) : (
                             <Bot className="w-3.5 h-3.5 text-chart-5 shrink-0" />
                           )}
@@ -272,11 +293,16 @@ export default function Usage() {
                       </div>
                       <ShareBar
                         percent={share}
-                        tone={isOrchestrator(row) ? 'bg-chart-1' : 'bg-chart-5'}
+                        tone={
+                          isOrchestrator(row)
+                            ? 'bg-chart-1'
+                            : isCompression(row)
+                              ? 'bg-chart-6'
+                              : 'bg-chart-5'
+                        }
                       />
                       <p className="text-[11px] text-text-secondary mt-1">
-                        {share.toFixed(1)}% · {formatTokens(row.input_tokens)} in ·{' '}
-                        {formatTokens(row.output_tokens)} out
+                        {share.toFixed(1)}% · {tokenDetail(row)}
                       </p>
                     </div>
                   );

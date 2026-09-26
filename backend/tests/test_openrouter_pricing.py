@@ -17,6 +17,16 @@ def test_estimate_cost_basic():
         "openai/gpt-4o-mini", 1_000_000, 500_000, prices=prices
     )
     assert cost == pytest.approx(0.15 + 0.3)
+    cached = pricing.estimate_openrouter_cost(
+        "openai/gpt-4o-mini",
+        0,
+        0,
+        prices=prices,
+        cache_read_tokens=1_000_000,
+        cache_write_tokens=1_000_000,
+    )
+    # Prompt price is $0.15 / 1M tokens. Read 0.1×, write 1.25×.
+    assert cached == pytest.approx(0.15 * 0.1 + 0.15 * 1.25)
 
 
 def test_estimate_cost_unknown_model_returns_none():

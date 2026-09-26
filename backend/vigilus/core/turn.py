@@ -20,10 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vigilus.core.compressor import ContextCompressor, resolve_context_window
 from vigilus.core.orchestrator import (
     load_orchestrator_config,
+    resolve_loop_model,
     resolve_orchestrator_provider,
+    resolve_summarizer,
 )
 from vigilus.core.orchestrator_loop import load_db_messages_as_llm, run_orchestrator
-from vigilus.core.prompt_builder import PromptBuilder
+from vigilus.core.prompt_builder import PromptBuilder, SystemPrompt
 from vigilus.core.sse import StreamBridge
 from vigilus.db.models import Message, MessageRole, Session
 
@@ -44,6 +46,19 @@ class TurnResult:
     text: str
     assistant_message: Message | None
     user_message: Message | None
+
+
+def system_parts(
+    prompt: SystemPrompt, system_extra: str | None = None
+) -> tuple[str | None, str | None]:
+    """Split a built prompt into the cacheable prefix and the volatile rest.
+
+    ``stable`` is the prefix Anthropic can cache. Server status, memories,
+    the date, and any per-turn extra stay after the breakpoint.
+    """
+    cached = prompt.stable or None
+    volatile = "\n\n".join(part for part in (prompt.context, prompt.volatile, system_extra) if part)
+    return cached, volatile or None
 
 
 def turn_title(session: Session, user_text: str) -> str | None:
@@ -95,12 +110,14 @@ async def execute_turn(
     """
     provider, provider_row, model = await resolve_orchestrator_provider(db)
     cfg = load_orchestrator_config()
+    loop_model = resolve_loop_model(model)
 
     builder = PromptBuilder(db=db, custom_identity=cfg.custom_identity, soul=cfg.soul)
     prompt_obj = await builder.build(session_id=session.id)
-    system_prompt = prompt_obj.render()
+    cached_system, system_prompt = system_parts(prompt_obj, system_extra)
+    full_system = prompt_obj.render()
     if system_extra:
-        system_prompt += "\n\n" + system_extra
+        full_system += "\n\n" + system_extra
 
     user_message: Message | None = None
     if save_user_message:
@@ -121,13 +138,24 @@ async def execute_turn(
     )
     llm_history = load_db_messages_as_llm(list(rows))
 
+    async def _resolve_summary():
+        sum_provider, sum_row, sum_model = await resolve_summarizer(
+            db,
+            fallback_provider_row=provider_row,
+            fallback_model=model,
+        )
+        sum_type = sum_row.type.value if hasattr(sum_row.type, "value") else str(sum_row.type)
+        return sum_provider, sum_model, sum_row.id, sum_type
+
     compressor = ContextCompressor(
         provider=provider,
-        model=model,
-        max_tokens=resolve_context_window(provider_row, model),
+        model=loop_model,
+        max_tokens=resolve_context_window(provider_row, loop_model),
+        session_id=session.id,
+        resolve_summary=_resolve_summary,
     )
     llm_history, summary = await compressor.compress_if_needed(
-        llm_history, system_tokens=len(system_prompt) // 4
+        llm_history, system_tokens=len(full_system) // 4
     )
     if summary:
         logger.info("turn.compressed", session_id=session.id)
@@ -135,19 +163,18 @@ async def execute_turn(
             prompt_obj,
             memory_context=("[Previous conversation was compressed. Summary:]\n" + summary),
         )
-        system_prompt = prompt_obj.render()
-        if system_extra:
-            system_prompt += "\n\n" + system_extra
+        cached_system, system_prompt = system_parts(prompt_obj, system_extra)
 
     new_msgs = await run_orchestrator(
         llm_history,
         provider,
-        system_prompt,
+        system_prompt or "",
         db=db,
         session_id=session.id,
         provider_id=provider_row.id,
         provider_type=provider_row.type.value,
-        model=model,
+        model=loop_model,
+        cached_system=cached_system,
         bridge=bridge,
         cancel_event=cancel_event,
         unattended=unattended,

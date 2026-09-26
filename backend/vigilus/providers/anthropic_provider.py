@@ -19,6 +19,56 @@ from vigilus.providers.base import (
 )
 from vigilus.providers.catalog import ANTHROPIC_DEFAULT_MODEL
 
+# 5-minute ephemeral cache. A breakpoint on the stable prefix, the tool list,
+# and the latest message lets the next iteration read that prefix back.
+_CACHE_CONTROL = {"type": "ephemeral"}
+
+
+def _usage_from_message(usage: Any) -> dict[str, int]:
+    """Map Anthropic usage onto the shared ledger shape.
+
+    ``input_tokens`` excludes cache read and cache write. Those are recorded
+    separately so cost can price them at the cache rates instead of full input.
+    Zero cache counts are omitted so callers that compare the dict stay stable
+    when caching is off.
+    """
+    counted = {
+        "input_tokens": int(getattr(usage, "input_tokens", 0) or 0),
+        "output_tokens": int(getattr(usage, "output_tokens", 0) or 0),
+    }
+    cache_read = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
+    cache_write = int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
+    if cache_read:
+        counted["cache_read_tokens"] = cache_read
+    if cache_write:
+        counted["cache_write_tokens"] = cache_write
+    return counted
+
+
+def _mark_last_message(messages: list[dict[str, Any]]) -> None:
+    """Put a cache breakpoint on the last message without mutating stored blocks."""
+    if not messages:
+        return
+    last = messages[-1]
+    content = last.get("content")
+    if isinstance(content, str):
+        if content:
+            last["content"] = [
+                {"type": "text", "text": content, "cache_control": dict(_CACHE_CONTROL)}
+            ]
+        return
+    if not isinstance(content, list) or not content:
+        return
+    blocks: list[Any] = []
+    for block in content:
+        blocks.append(dict(block) if isinstance(block, dict) else block)
+    tail = blocks[-1]
+    if isinstance(tail, dict):
+        marked = dict(tail)
+        marked["cache_control"] = dict(_CACHE_CONTROL)
+        blocks[-1] = marked
+    last["content"] = blocks
+
 
 class AnthropicProvider(AgentLLM):
     """Adapter for Anthropic's Claude models."""
@@ -129,8 +179,12 @@ class AnthropicProvider(AgentLLM):
         tools: list[ToolSpec] | None,
         temperature: float,
         max_tokens: int,
+        model: str | None = None,
+        cached_system: str | None = None,
+        cache_conversation: bool = False,
     ) -> dict[str, Any]:
         """Assemble the request payload shared by the streaming and plain paths."""
+        had_messages = bool(messages)
         anthropic_messages = self._convert_messages(messages)
         anthropic_tools = self._convert_tools(tools)
 
@@ -139,17 +193,38 @@ class AnthropicProvider(AgentLLM):
             anthropic_messages = [{"role": "user", "content": "Hello"}]
 
         kwargs: dict[str, Any] = {
-            "model": self.default_model,
+            "model": model or self.default_model,
             "max_tokens": max_tokens,
             "temperature": temperature,
             "messages": anthropic_messages,
         }
 
-        if system:
+        # Cache only when the caller opts in. A one-shot summary must not write
+        # its unique prompt into the cache at the write premium.
+        caching = bool(cached_system) or cache_conversation
+        if cached_system:
+            blocks: list[dict[str, Any]] = [
+                {
+                    "type": "text",
+                    "text": cached_system,
+                    "cache_control": dict(_CACHE_CONTROL),
+                }
+            ]
+            if system:
+                blocks.append({"type": "text", "text": system})
+            kwargs["system"] = blocks
+        elif system:
             kwargs["system"] = system
 
         if anthropic_tools:
+            if caching:
+                last_tool = dict(anthropic_tools[-1])
+                last_tool["cache_control"] = dict(_CACHE_CONTROL)
+                anthropic_tools = [*anthropic_tools[:-1], last_tool]
             kwargs["tools"] = anthropic_tools
+
+        if cache_conversation and had_messages:
+            _mark_last_message(anthropic_messages)
 
         return kwargs
 
@@ -174,10 +249,7 @@ class AnthropicProvider(AgentLLM):
             content=content,
             tool_uses=tool_uses,
             stop_reason=response.stop_reason,
-            usage={
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens,
-            },
+            usage=_usage_from_message(response.usage),
             raw=response.model_dump(),
         )
 
@@ -190,6 +262,9 @@ class AnthropicProvider(AgentLLM):
         temperature: float = 0.0,
         max_tokens: int = 4096,
         stream: bool = False,
+        model: str | None = None,
+        cached_system: str | None = None,
+        cache_conversation: bool = False,
     ) -> LLMResponse | AsyncIterator[LLMResponse]:
         """Send completion to Anthropic."""
         kwargs = self._build_kwargs(
@@ -198,6 +273,9 @@ class AnthropicProvider(AgentLLM):
             tools=tools,
             temperature=temperature,
             max_tokens=max_tokens,
+            model=model,
+            cached_system=cached_system,
+            cache_conversation=cache_conversation,
         )
 
         if stream:
@@ -241,6 +319,9 @@ class AnthropicProvider(AgentLLM):
         temperature: float = 0.0,
         max_tokens: int = 4096,
         on_text: TextSink | None = None,
+        model: str | None = None,
+        cached_system: str | None = None,
+        cache_conversation: bool = False,
     ) -> LLMResponse:
         """Stream text deltas, then return the assembled final message."""
         kwargs = self._build_kwargs(
@@ -249,6 +330,9 @@ class AnthropicProvider(AgentLLM):
             tools=tools,
             temperature=temperature,
             max_tokens=max_tokens,
+            model=model,
+            cached_system=cached_system,
+            cache_conversation=cache_conversation,
         )
 
         async with self.client.messages.stream(**kwargs) as stream:

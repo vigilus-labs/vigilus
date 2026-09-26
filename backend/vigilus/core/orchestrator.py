@@ -31,6 +31,14 @@ class OrchestratorConfig:
 
     provider_id: str | None = None
     model: str | None = None
+    # Optional cheaper model for the orchestrator's routing calls, on the same
+    # provider. Unset means ``model`` (current behavior).
+    router_model: str | None = None
+    # Optional provider and model for conversation compression. Unset provider
+    # means the caller’s provider; unset model means a cheap default for known
+    # hosted providers, otherwise that provider’s own default.
+    summarizer_provider_id: str | None = None
+    summarizer_model: str | None = None
     # custom_identity overrides only the stable identity block.
     # If empty/None the prompt_builder's DEFAULT_IDENTITY is used.
     custom_identity: str | None = None
@@ -54,6 +62,9 @@ class OrchestratorConfig:
         return {
             "provider_id": self.provider_id,
             "model": self.model,
+            "router_model": self.router_model,
+            "summarizer_provider_id": self.summarizer_provider_id,
+            "summarizer_model": self.summarizer_model,
             "custom_identity": self.custom_identity,
             "soul": self.soul,
             "timezone": self.timezone,
@@ -73,6 +84,9 @@ class OrchestratorConfig:
         return cls(
             provider_id=data.get("provider_id"),
             model=data.get("model"),
+            router_model=data.get("router_model") or None,
+            summarizer_provider_id=data.get("summarizer_provider_id") or None,
+            summarizer_model=data.get("summarizer_model") or None,
             custom_identity=data.get("custom_identity"),
             soul=data.get("soul"),
             timezone=data.get("timezone") or "UTC",
@@ -168,6 +182,59 @@ async def resolve_orchestrator_provider(db):
     if hasattr(provider, "default_model") and model:
         provider.default_model = model
 
+    return provider, provider_row, model
+
+
+def resolve_loop_model(configured_model: str | None) -> str | None:
+    """Model the orchestrator loop should call.
+
+    ``router_model`` overrides the orchestrator model when set. Both use the
+    orchestrator's provider.
+    """
+    return load_orchestrator_config().router_model or configured_model
+
+
+# Cheap/fast defaults for compression when the user has not picked a model.
+# Local and custom providers are absent on purpose: their model ids are not
+# ours to guess.
+CHEAP_SUMMARY_MODELS = {
+    "anthropic": "claude-haiku-4-5",
+    "openai": "gpt-4o-mini",
+    "google": "gemini-2.5-flash",
+    "openrouter": "google/gemini-2.5-flash",
+}
+
+
+def _provider_type_name(provider_row) -> str:
+    provider_type = provider_row.type
+    return provider_type.value if hasattr(provider_type, "value") else str(provider_type)
+
+
+async def resolve_summarizer(db, *, fallback_provider_row, fallback_model: str | None):
+    """Provider and model for a compression call.
+
+    Returns ``(provider_instance, provider_row, model)``. A missing or disabled
+    summarizer provider falls back to ``fallback_provider_row`` so a bad
+    setting cannot stop the turn.
+    """
+    from vigilus.db.models import Provider
+    from vigilus.providers.registry import build_provider
+
+    cfg = load_orchestrator_config()
+    provider_row = fallback_provider_row
+    if cfg.summarizer_provider_id:
+        row = await db.get(Provider, cfg.summarizer_provider_id)
+        if row is not None and row.enabled:
+            provider_row = row
+
+    provider = build_provider(provider_row)
+    provider_type = _provider_type_name(provider_row)
+    if cfg.summarizer_model:
+        model = cfg.summarizer_model
+    elif provider_type in CHEAP_SUMMARY_MODELS:
+        model = CHEAP_SUMMARY_MODELS[provider_type]
+    else:
+        model = provider_row.default_model or fallback_model
     return provider, provider_row, model
 
 

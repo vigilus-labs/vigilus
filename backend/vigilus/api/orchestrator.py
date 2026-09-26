@@ -19,6 +19,9 @@ router = APIRouter(prefix="/orchestrator", tags=["Orchestrator"])
 class OrchestratorConfigResponse(BaseModel):
     provider_id: str | None = None
     model: str | None = None
+    router_model: str | None = None
+    summarizer_provider_id: str | None = None
+    summarizer_model: str | None = None
     system_prompt: str
     custom_identity: str | None = None
     soul: str | None = None
@@ -29,6 +32,9 @@ class OrchestratorConfigResponse(BaseModel):
 class OrchestratorConfigUpdate(BaseModel):
     provider_id: str | None = None
     model: str | None = None
+    router_model: str | None = None
+    summarizer_provider_id: str | None = None
+    summarizer_model: str | None = None
     system_prompt: str | None = None
     custom_identity: str | None = None
     soul: str | None = None
@@ -64,6 +70,21 @@ async def update_orchestrator_config(
 
     if data.model is not None:
         cfg.model = data.model if data.model else None
+
+    if "router_model" in data.model_fields_set:
+        cfg.router_model = data.router_model or None
+
+    if "summarizer_model" in data.model_fields_set:
+        cfg.summarizer_model = data.summarizer_model or None
+
+    if "summarizer_provider_id" in data.model_fields_set:
+        if data.summarizer_provider_id:
+            summarizer = await db.get(Provider, data.summarizer_provider_id)
+            if not summarizer:
+                raise HTTPException(status_code=400, detail="Summarizer provider not found")
+            cfg.summarizer_provider_id = data.summarizer_provider_id
+        else:
+            cfg.summarizer_provider_id = None
 
     if data.custom_identity is not None:
         cfg.custom_identity = data.custom_identity if data.custom_identity else None

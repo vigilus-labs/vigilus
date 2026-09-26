@@ -22,6 +22,7 @@ Usage::
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import structlog
@@ -29,6 +30,10 @@ import structlog
 from vigilus.providers.base import LLMMessage
 
 logger = structlog.get_logger(__name__)
+
+# provider, model, provider_id, provider_type — resolved only when a summary
+# call is actually about to happen.
+SummarySource = Callable[[], Awaitable[tuple[Any, str | None, str | None, str | None]]]
 
 # Approximate characters per token (rough heuristic for mixed content)
 _CHARS_PER_TOKEN = 4
@@ -219,18 +224,35 @@ class ContextCompressor:
         model: str | None = None,
         max_tokens: int = _DEFAULT_MAX_TOKENS,
         trigger_threshold: float = 0.7,
+        *,
+        session_id: str | None = None,
+        provider_id: str | None = None,
+        provider_type: str | None = None,
+        resolve_summary: SummarySource | None = None,
     ):
         """
         Args:
-            provider: LLM provider instance for generating summaries.
-            model: Model override (uses provider default if None).
+            provider: LLM provider used to count tokens, and to summarize when
+                ``resolve_summary`` is not set.
+            model: Model override for the summary call (uses provider default
+                if None). Ignored when ``resolve_summary`` returns a model.
             max_tokens: Maximum context window size in tokens.
             trigger_threshold: Fraction of max_tokens at which to trigger compression.
+            session_id: Chat session the compression cost is attributed to.
+            provider_id: Provider id recorded on the usage row.
+            provider_type: Provider type recorded on the usage row.
+            resolve_summary: Called only when a summary is about to be generated,
+                so a separate summarizer provider is not built on turns that
+                do not compress.
         """
         self.provider = provider
         self.model = model
         self.max_tokens = max_tokens
         self.trigger_threshold = trigger_threshold
+        self.session_id = session_id
+        self.provider_id = provider_id
+        self.provider_type = provider_type
+        self.resolve_summary = resolve_summary
 
     async def compress_if_needed(
         self,
@@ -345,14 +367,34 @@ class ContextCompressor:
 
     async def _generate_summary(self, prompt: str) -> str:
         """Generate a summary using the configured LLM provider."""
+        provider = self.provider
+        model = self.model
+        provider_id = self.provider_id
+        provider_type = self.provider_type
         try:
-            # Use a small max_tokens for the summary to keep costs down
-            response = await self.provider.complete(
+            if self.resolve_summary is not None:
+                provider, model, provider_id, provider_type = await self.resolve_summary()
+            # Use a small max_tokens for the summary to keep costs down.
+            # No conversation cache breakpoint: this prompt is unique and a
+            # cache write would never be read back.
+            response = await provider.complete(
                 messages=[LLMMessage(role="user", content=prompt)],
                 system="You are a concise summarizer. Produce compact, factual summaries.",
                 tools=None,
                 temperature=0.0,
                 max_tokens=2048,
+                model=model,
+            )
+            from vigilus.core.llm_usage import record_llm_usage
+            from vigilus.db.models import UsageActorType
+
+            await record_llm_usage(
+                usage=response.usage or {},
+                actor_type=UsageActorType.compression,
+                session_id=self.session_id,
+                provider_id=provider_id,
+                provider_type=provider_type,
+                model=model or getattr(provider, "default_model", None),
             )
             return response.content or ""
         except Exception as e:

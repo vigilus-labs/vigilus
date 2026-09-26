@@ -76,7 +76,14 @@ async def record_llm_usage(
             return
         input_tokens = int(usage.get("input_tokens") or 0)
         output_tokens = int(usage.get("output_tokens") or 0)
-        if input_tokens <= 0 and output_tokens <= 0:
+        cache_read_tokens = int(usage.get("cache_read_tokens") or 0)
+        cache_write_tokens = int(usage.get("cache_write_tokens") or 0)
+        if (
+            input_tokens <= 0
+            and output_tokens <= 0
+            and cache_read_tokens <= 0
+            and cache_write_tokens <= 0
+        ):
             return
 
         cost = None
@@ -84,12 +91,26 @@ async def record_llm_usage(
         if ptype == "openrouter" and model:
             # Never await network on the chat hot path — cache only + bg refresh.
             prices = get_cached_openrouter_prices()
-            cost = estimate_openrouter_cost(model, input_tokens, output_tokens, prices=prices)
+            cost = estimate_openrouter_cost(
+                model,
+                input_tokens,
+                output_tokens,
+                prices=prices,
+                cache_read_tokens=cache_read_tokens,
+                cache_write_tokens=cache_write_tokens,
+            )
             schedule_openrouter_price_refresh()
         elif model:
             # Direct providers publish no price API — use the static list-price
             # table. Unknown models stay unpriced (cost_incomplete).
-            cost = estimate_static_cost(ptype, model, input_tokens, output_tokens)
+            cost = estimate_static_cost(
+                ptype,
+                model,
+                input_tokens,
+                output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_write_tokens=cache_write_tokens,
+            )
 
         factory = get_session_factory()
         async with factory() as session:
@@ -105,6 +126,8 @@ async def record_llm_usage(
                     model=model,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
+                    cache_read_tokens=cache_read_tokens,
+                    cache_write_tokens=cache_write_tokens,
                     estimated_cost_usd=cost,
                 )
             )
@@ -117,15 +140,29 @@ def _bucket() -> dict:
     return {
         "input_tokens": 0,
         "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
         "total_tokens": 0,
         "estimated_cost_usd": None,
     }
 
 
+def _row_tokens(row: LlmUsage) -> int:
+    """Input, output, and cache tokens. Cache counts are additive, not a subset."""
+    return (
+        row.input_tokens
+        + row.output_tokens
+        + (row.cache_read_tokens or 0)
+        + (row.cache_write_tokens or 0)
+    )
+
+
 def _add_tokens(bucket: dict, row: LlmUsage) -> None:
     bucket["input_tokens"] += row.input_tokens
     bucket["output_tokens"] += row.output_tokens
-    bucket["total_tokens"] += row.input_tokens + row.output_tokens
+    bucket["cache_read_tokens"] += row.cache_read_tokens or 0
+    bucket["cache_write_tokens"] += row.cache_write_tokens or 0
+    bucket["total_tokens"] += _row_tokens(row)
     if row.estimated_cost_usd is not None:
         if bucket["estimated_cost_usd"] is None:
             bucket["estimated_cost_usd"] = 0.0
@@ -155,10 +192,21 @@ async def get_usage_summary(db: AsyncSession, window: str) -> dict:
         "name": "Vigilus",
         **_bucket(),
     }
+    compression = {
+        "actor_type": UsageActorType.compression.value,
+        "operator_id": None,
+        "name": "Compression",
+        **_bucket(),
+    }
+    has_compression = False
     operators: dict[str | None, dict] = {}
     for row in rows:
         if row.actor_type == UsageActorType.orchestrator:
             _add_tokens(orch, row)
+            continue
+        if row.actor_type == UsageActorType.compression:
+            has_compression = True
+            _add_tokens(compression, row)
             continue
         key = row.operator_id
         if key not in operators:
@@ -179,7 +227,10 @@ async def get_usage_summary(db: AsyncSession, window: str) -> dict:
                 if oid is not None and oid in names:
                     bucket["name"] = names[oid]
 
-    by_actor = [orch, *operators.values()]
+    by_actor = [orch]
+    if has_compression:
+        by_actor.append(compression)
+    by_actor.extend(operators.values())
 
     providers: dict[str | None, dict] = {}
     for row in rows:
@@ -224,7 +275,7 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def _build_series(rows: list[LlmUsage], window: str, start: datetime | None) -> list[dict]:
-    """Bucket usage over time, split by orchestrator vs operators.
+    """Bucket usage over time, split by orchestrator, compression, and operators.
 
     ``today`` buckets hourly; every other window buckets by local calendar day.
     Empty buckets are zero-filled so the chart shows real gaps, up to
@@ -245,6 +296,7 @@ def _build_series(rows: list[LlmUsage], window: str, start: datetime | None) -> 
                 "bucket": key,
                 "orchestrator_tokens": 0,
                 "operator_tokens": 0,
+                "compression_tokens": 0,
                 "total_tokens": 0,
                 "estimated_cost_usd": None,
             }
@@ -268,10 +320,12 @@ def _build_series(rows: list[LlmUsage], window: str, start: datetime | None) -> 
 
     for row in rows:
         bucket = ensure(key_of(row.created_at))
-        tokens = row.input_tokens + row.output_tokens
+        tokens = _row_tokens(row)
         bucket["total_tokens"] += tokens
         if row.actor_type == UsageActorType.orchestrator:
             bucket["orchestrator_tokens"] += tokens
+        elif row.actor_type == UsageActorType.compression:
+            bucket["compression_tokens"] += tokens
         else:
             bucket["operator_tokens"] += tokens
         if row.estimated_cost_usd is not None:

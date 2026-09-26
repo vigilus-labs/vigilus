@@ -10,6 +10,8 @@ class UsageTotals(BaseModel):
 
     input_tokens: int
     output_tokens: int
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
     total_tokens: int
     estimated_cost_usd: float | None
 
@@ -42,6 +44,7 @@ class UsageSeriesPoint(BaseModel):
     bucket: str
     orchestrator_tokens: int
     operator_tokens: int
+    compression_tokens: int = 0
     total_tokens: int
     estimated_cost_usd: float | None
 
