@@ -20,6 +20,61 @@ from vigilus.db.models import Action, ActionOutcome, Operator, Tool, ToolImpleme
 
 logger = structlog.get_logger(__name__)
 
+# How long a cached approved-grant lookup may be reused. The cache is cleared
+# on every ``jit.resolved`` event, so this TTL only bounds staleness if an
+# invalidation event is somehow missed (e.g. a different process wrote the DB).
+_GRANT_CACHE_TTL_SECONDS = 1.0
+
+
+class _GrantCache:
+    """Process-wide cache of approved-grant lookups, cleared on ``jit.resolved``.
+
+    The event bus is a singleton and ToolRegistry instances are per-run, so
+    the subscription lives on a single shared cache object instead of each
+    registry subscribing (and never unsubscribing) itself.
+    """
+
+    def __init__(self) -> None:
+        # (operator_id, resource, permission) -> (cached_at, token-or-None)
+        self._entries: dict[tuple[str, str, Permission], tuple[float, Any]] = {}
+        from vigilus.core.events import get_event_bus
+
+        get_event_bus().subscribe("jit.resolved", self._on_jit_resolved)
+
+    async def _on_jit_resolved(self, _payload: dict[str, Any]) -> None:
+        self._entries.clear()
+
+    def clear(self) -> None:
+        self._entries.clear()
+
+    def get(self, key: tuple[str, str, Permission]) -> tuple[bool, Any]:
+        """Return ``(hit, token)``; a cached miss is a valid hit with token None."""
+        entry = self._entries.get(key)
+        if entry is None:
+            return False, None
+        cached_at, token = entry
+        if time.monotonic() - cached_at >= _GRANT_CACHE_TTL_SECONDS:
+            del self._entries[key]
+            return False, None
+        # A cached token can expire mid-run; treat that as a miss.
+        if token is not None and not token.is_valid:
+            del self._entries[key]
+            return False, None
+        return True, token
+
+    def put(self, key: tuple[str, str, Permission], token) -> None:
+        self._entries[key] = (time.monotonic(), token)
+
+
+_grant_cache: _GrantCache | None = None
+
+
+def _get_grant_cache() -> _GrantCache:
+    global _grant_cache
+    if _grant_cache is None:
+        _grant_cache = _GrantCache()
+    return _grant_cache
+
 
 @dataclass
 class ToolResult:
@@ -36,10 +91,39 @@ class ToolRegistry:
 
     def __init__(self):
         self.policy_engine = PolicyEngine()
+        from vigilus.core.rbac import WardenService
+
+        self.warden = WardenService()
         from vigilus.core.events import get_event_bus
 
         self.event_bus = get_event_bus()
         self.session_factory = get_session_factory()
+        # Per-run resolved-tool cache; grants use the shared _GrantCache.
+        self._tool_cache: dict[str, Tool] = {}
+        self._grant_cache = _get_grant_cache()
+
+    async def _resolve_tool(self, db, tool_id_or_name: str) -> Tool | None:
+        """Resolve a tool by id or name, caching the row for the rest of the run.
+
+        The cached instance is detached from its session; only its already
+        loaded column attributes are used downstream, so no lazy load can be
+        triggered on a dead session.
+        """
+        cached = self._tool_cache.get(tool_id_or_name)
+        if cached is not None:
+            return cached
+
+        query = select(Tool).where(
+            (Tool.id == tool_id_or_name) | (Tool.name == tool_id_or_name)
+        )
+        result = await db.execute(query)
+        tool = result.scalar_one_or_none()
+        if tool is not None:
+            db.expunge(tool)
+            self._tool_cache[tool_id_or_name] = tool
+            self._tool_cache.setdefault(tool.name, tool)
+            self._tool_cache.setdefault(tool.id, tool)
+        return tool
 
     async def execute(
         self,
@@ -83,12 +167,8 @@ class ToolRegistry:
             jit_token = token_in_args
 
         async with self.session_factory() as db:
-            # 1. Resolve tool
-            query = select(Tool).where(
-                (Tool.id == tool_id_or_name) | (Tool.name == tool_id_or_name)
-            )
-            result = await db.execute(query)
-            tool = result.scalar_one_or_none()
+            # 1. Resolve tool (cached per run — see _resolve_tool)
+            tool = await self._resolve_tool(db, tool_id_or_name)
 
             if not tool:
                 return ToolResult(success=False, error=f"Tool not found: {tool_id_or_name}")
@@ -103,9 +183,7 @@ class ToolRegistry:
             # Resolve token if provided
             token_obj = None
             if jit_token:
-                from vigilus.core.rbac import WardenService
-
-                token_obj = WardenService().validate_token(jit_token)
+                token_obj = self.warden.validate_token(jit_token)
 
             is_allowed = await self.policy_engine.check_permission(
                 operator=operator,
@@ -152,9 +230,7 @@ class ToolRegistry:
                 db.add(action)
 
                 # Request JIT
-                from vigilus.core.rbac import WardenService
-
-                warden = WardenService()
+                warden = self.warden
                 task_description = (
                     f"Run {tool.name} with args {json.dumps(arguments, default=str)[:500]}"
                 )
@@ -168,6 +244,7 @@ class ToolRegistry:
                     # Lenient trust: auto-approved — proceed with the grant
                     # immediately instead of bouncing back to the LLM.
                     token_obj = warden.validate_token(token)
+                    self._grant_cache.clear()
                 else:
                     # Strict trust: PAUSE here until the user approves or
                     # denies (inline chat card or JIT page), or we time out.
@@ -177,6 +254,9 @@ class ToolRegistry:
                         outcome = await self._wait_for_jit_resolution(
                             req.id, jit_wait_seconds, cancel_event=cancel_event
                         )
+                    # Grant state changed while waiting — never let a cached
+                    # lookup mask the resolution.
+                    self._grant_cache.clear()
                     if outcome == "cancelled":
                         # A task that was stopped must never leave a live grant
                         # request behind. Resolve it fail-closed and notify all
@@ -412,9 +492,19 @@ class ToolRegistry:
         they authorize only the command that triggered them — the next call
         re-prompts. A grant is used only when its resource covers this call, so
         a newer grant for a different host does not hide an older matching one.
+
+        Results are cached process-wide — positive lookups only — and cleared
+        on every ``jit.resolved`` event. A "no grant found" result is never
+        cached so an approval written by any surface is visible on the very
+        next call (the issue's "grant changes still take effect immediately").
         """
-        from vigilus.core.rbac import WardenService, _resource_covers
+        from vigilus.core.rbac import _resource_covers
         from vigilus.db.models import JitRequest, JitStatus
+
+        cache_key = (operator.id, resource, req_perm)
+        hit, token = self._grant_cache.get(cache_key)
+        if hit:
+            return token
 
         result = await db.execute(
             select(JitRequest)
@@ -427,16 +517,19 @@ class ToolRegistry:
             .order_by(JitRequest.resolved_at.desc())
             .limit(10)
         )
-        warden = WardenService()
+        token = None
         for req in result.scalars().all():
-            token = warden.validate_token(req.token_id)
+            candidate = self.warden.validate_token(req.token_id)
             if (
-                token
-                and token.permission >= req_perm
-                and _resource_covers(token.resource, resource)
+                candidate
+                and candidate.permission >= req_perm
+                and _resource_covers(candidate.resource, resource)
             ):
-                return token
-        return None
+                token = candidate
+                break
+        if token is not None:
+            self._grant_cache.put(cache_key, token)
+        return token
 
     def _get_native_handler(self, handler_path: str) -> Callable:
         """Resolve a native handler callable.

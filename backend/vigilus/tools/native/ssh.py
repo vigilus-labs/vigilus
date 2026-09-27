@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import threading
 import time
@@ -15,6 +16,89 @@ logger = structlog.get_logger(__name__)
 
 # Cap parallel SSH connections so a large inventory cannot open unbounded sockets.
 _SSH_FANOUT_LIMIT = 8
+
+# A pooled connection idle longer than this is reconnected on next use.
+_SSH_POOL_IDLE_SECONDS = 60.0
+
+# Pool of live SSH connections, keyed by connection parameters including a
+# fingerprint of the credential. Guarded by _SSH_POOL_LOCK; each connection
+# has its own lock so concurrent commands to one host serialize instead of
+# interleaving on a shared transport.
+_SSH_POOL_LOCK = threading.Lock()
+_SSH_POOL: dict[tuple[str, int, str | None, str, str], _PooledConnection] = {}
+
+
+def _pool_key(
+    hostname: str, port: int, username: str | None, auth_method: str, secret: str | None
+) -> tuple[str, int, str | None, str, str]:
+    """Identity of a connection, including a credential version fingerprint.
+
+    The secret is hashed (never stored raw in the key) so editing a
+    credential yields a new key and stale connections idle out instead of
+    being reused with old credentials.
+    """
+    fingerprint = hashlib.sha256((secret or "").encode("utf-8")).hexdigest()[:16]
+    return (hostname, int(port), username, auth_method, fingerprint)
+
+
+class _PooledConnection:
+    def __init__(self, client: paramiko.SSHClient):
+        self.client = client
+        self.lock = threading.Lock()
+        self.last_used = time.monotonic()
+
+    def healthy(self) -> bool:
+        transport = self.client.get_transport()
+        return transport is not None and transport.is_active()
+
+
+def _acquire_pooled(key) -> _PooledConnection | None:
+    """Return a healthy pooled connection for *key*, evicting dead/stale ones."""
+    now = time.monotonic()
+    with _SSH_POOL_LOCK:
+        conn = _SSH_POOL.get(key)
+        if conn is None:
+            return None
+        if now - conn.last_used > _SSH_POOL_IDLE_SECONDS or not conn.healthy():
+            del _SSH_POOL[key]
+        else:
+            return conn
+    _close_quietly(conn.client)
+    return None
+
+
+def _store_pooled(key, client: paramiko.SSHClient) -> _PooledConnection:
+    """Pool a freshly connected client, or return the winner if a concurrent
+    call stored one first (the caller closes the spare)."""
+    now = time.monotonic()
+    with _SSH_POOL_LOCK:
+        # Amortized sweep so entries orphaned by credential rotations or
+        # disuse cannot accumulate without a background reaper.
+        for stale_key in [
+            k for k, c in _SSH_POOL.items() if now - c.last_used > _SSH_POOL_IDLE_SECONDS
+        ]:
+            _close_quietly(_SSH_POOL.pop(stale_key).client)
+        existing = _SSH_POOL.get(key)
+        if existing is not None:
+            return existing
+        conn = _PooledConnection(client)
+        _SSH_POOL[key] = conn
+        return conn
+
+
+def _evict_pooled(key, conn: _PooledConnection) -> None:
+    """Drop a connection from the pool and close it (error/timeout/cancel)."""
+    with _SSH_POOL_LOCK:
+        if _SSH_POOL.get(key) is conn:
+            del _SSH_POOL[key]
+    _close_quietly(conn.client)
+
+
+def _close_quietly(client) -> None:
+    try:
+        client.close()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _credential_fields(cred) -> dict[str, Any]:
@@ -246,6 +330,9 @@ async def ssh_exec(
     # Set when the awaiting turn is cancelled so the worker thread drops the
     # connection instead of running on detached until the timeout.
     stop = threading.Event()
+    # DB-resolved servers can safely pool connections; ad-hoc explicit
+    # credentials stay connect-per-command.
+    pooled = bool(server_id and db)
     try:
         return await asyncio.to_thread(
             _run_ssh,
@@ -259,6 +346,7 @@ async def ssh_exec(
             timeout=timeout,
             server_label=server_id or hostname,
             stop=stop,
+            pooled=pooled,
         )
     except asyncio.CancelledError:
         stop.set()
@@ -347,21 +435,58 @@ def _run_ssh(
     timeout,
     server_label,
     stop: threading.Event,
+    pooled: bool = False,
 ) -> dict[str, Any]:
-    """Blocking SSH exec. Must not touch a database session."""
-    client = None
+    """Blocking SSH exec. Must not touch a database session.
+
+    With ``pooled=True`` (DB-resolved servers) the connection is reused
+    across calls, keyed by host/port/user/auth/credential fingerprint. Any
+    error, timeout, or cancellation evicts the connection — a cancelled
+    command must never leave a possibly-dirty transport behind. Cancellations
+    and timeouts close the channel via the transport close in the eviction.
+    """
+    pool_key = None
+    if pooled:
+        pool_key = _pool_key(hostname, port, username, auth_method, secret)
+
+    conn: _PooledConnection | None = _acquire_pooled(pool_key) if pool_key else None
+    fresh: paramiko.SSHClient | None = None
     try:
-        client = _ssh_connect_sync(
-            hostname,
-            port,
-            username,
-            secret,
-            auth_method=auth_method,
-            timeout=10,
-            passphrase=passphrase,
-        )
-        _stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
-        exit_code, out, err = _collect_output(stdout, stderr, timeout, stop)
+        if conn is None:
+            fresh = _ssh_connect_sync(
+                hostname,
+                port,
+                username,
+                secret,
+                auth_method=auth_method,
+                timeout=10,
+                passphrase=passphrase,
+            )
+            if pool_key:
+                conn = _store_pooled(pool_key, fresh)
+                if conn.client is not fresh:
+                    # Lost a same-key race; the pooled connection is fine.
+                    _close_quietly(fresh)
+                fresh = None
+                client = conn.client
+            else:
+                client = fresh
+        else:
+            client = conn.client
+
+        if conn is not None:
+            conn.lock.acquire()
+        try:
+            _stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+            exit_code, out, err = _collect_output(stdout, stderr, timeout, stop)
+        finally:
+            if conn is not None:
+                conn.last_used = time.monotonic()
+                conn.lock.release()
+
+        if fresh is not None:
+            # Non-pooled (explicit credentials) keeps connect-per-command.
+            fresh.close()
         return {
             "server": server_label,
             "command": command,
@@ -370,10 +495,14 @@ def _run_ssh(
             "exit_code": exit_code,
         }
     except Exception as e:
+        if pool_key and conn is not None:
+            # Evict: an error, timeout, or cancellation may have left the
+            # transport in an unusable state. Closing it also kills the
+            # remote channel of a cancelled/timed-out command.
+            _evict_pooled(pool_key, conn)
+        elif fresh is not None:
+            _close_quietly(fresh)
         return {"error": str(e), "exit_code": -1, "server": server_label}
-    finally:
-        if client:
-            client.close()
 
 
 async def ssh_exec_all(
@@ -427,6 +556,7 @@ async def ssh_exec_all(
                         "command": command,
                         "timeout": timeout,
                         "server_label": sid,
+                        "pooled": True,
                     },
                 )
             )
