@@ -1,9 +1,11 @@
 """The Vigilus orchestrator loop.
 
-Calls the orchestrator LLM, runs the research / remember / delegation control
-blocks it emits, feeds results back, and repeats until it gives a final
-answer. Shared by every front door through ``core.turn`` — web chat, the
-scheduler, and the channel gateway.
+Calls the orchestrator LLM and handles what it asks for: native tool calls
+(delegate / research / remember — run in parallel where independent) on
+providers with the capability flag, or the legacy parsed JSON control blocks
+in its text on the ones without. Results feed back until the model gives a
+final answer. Shared by every front door through ``core.turn`` — web chat,
+the scheduler, and the channel gateway.
 """
 
 from __future__ import annotations
@@ -15,6 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from vigilus.core.delegation import execute_delegation, parse_delegation, strip_delegation
 from vigilus.core.events import get_event_bus
+from vigilus.core.orchestrator_tools import (
+    DELEGATE_TOOL,
+    execute_tool_batch,
+    orchestrator_uses_native_tools,
+)
 from vigilus.core.sse import (
     EVT_DELEGATION_RESULT,
     EVT_DELEGATION_START,
@@ -24,7 +31,7 @@ from vigilus.core.sse import (
     EVT_THINKING,
     StreamBridge,
 )
-from vigilus.core.stream_text import SafeTextStreamer
+from vigilus.core.stream_text import SafeTextStreamer, strip_control_blocks
 from vigilus.core.tasks import TaskCancelled, await_cancelled, get_task_registry
 from vigilus.db.base import get_session_factory
 from vigilus.db.models import Message, MessageRole
@@ -42,17 +49,45 @@ def load_db_messages_as_llm(db_messages: list[Message]) -> list[LLMMessage]:
         if m.role == MessageRole.user:
             llm_msgs.append(LLMMessage(role="user", content=str(content)))
         elif m.role == MessageRole.assistant:
-            # Assistant message may contain delegation JSON or plain text
-            if isinstance(content, dict) and content.get("delegation"):
-                # Reconstruct as text (delegation was stored separately)
-                text = content.get("text", "")
-                llm_msgs.append(LLMMessage(role="assistant", content=text))
+            if isinstance(content, dict):
+                if content.get("tool_calls"):
+                    # Native tool-calling round trip: rebuild the assistant
+                    # message with its tool_use blocks so the following tool
+                    # messages pair up correctly.
+                    llm_msgs.append(
+                        LLMMessage(
+                            role="assistant",
+                            content=content.get("text", ""),
+                            tool_calls=content.get("tool_calls"),
+                        )
+                    )
+                elif content.get("delegation"):
+                    # Legacy text-path delegation (reconstruct as text;
+                    # the delegation was stored alongside)
+                    text = content.get("text", "")
+                    llm_msgs.append(LLMMessage(role="assistant", content=text))
+                else:
+                    llm_msgs.append(LLMMessage(role="assistant", content=str(content)))
             else:
                 llm_msgs.append(LLMMessage(role="assistant", content=str(content)))
         elif m.role == MessageRole.tool:
-            # Tool message = delegation result. Feed it back as a *user*
-            # message: there was no native tool_call before it, so strict
-            # providers reject role="tool" without a tool_call_id.
+            if isinstance(content, dict) and content.get("tool_use_id"):
+                # Native tool result with a matching tool_use — send as a real
+                # tool message so providers see a valid tool_use/tool_result
+                # pair.
+                result_text = str(content.get("result", content))
+                llm_msgs.append(
+                    LLMMessage(
+                        role="tool",
+                        name=content.get("tool") or content.get("operator"),
+                        tool_use_id=content["tool_use_id"],
+                        content=result_text,
+                    )
+                )
+                continue
+            # Legacy: tool message = delegation/research result fed back as a
+            # *user* message — there was no native tool_call before it, so
+            # strict providers reject role="tool" without a tool_call_id.
             result_text = str(content)
             operator_name = m.operator_id or "operator"
             if isinstance(content, dict):
@@ -122,6 +157,20 @@ async def run_orchestrator(
     empty_retry_used = False
     last_result_summary: str | None = None
 
+    # Native tool delegation (issues #39/#40): providers with the capability
+    # flag get real tools — delegate / web_search / web_fetch / remember — and
+    # several delegate calls in one response run in parallel. Providers
+    # without the flag (and any text control blocks) keep the parsed path.
+    native_tools = orchestrator_uses_native_tools(provider)
+    orchestrator_tool_specs = None
+    if native_tools:
+        from vigilus.config import get_settings
+        from vigilus.core.orchestrator_tools import build_orchestrator_tools
+
+        orchestrator_tool_specs = await build_orchestrator_tools(
+            db, search_enabled=get_settings().search_enabled
+        )
+
     while iteration < max_iterations:
         iteration += 1
         if cancel_event is not None and cancel_event.is_set():
@@ -172,7 +221,7 @@ async def run_orchestrator(
                     system=system_prompt,
                     cached_system=cached_system,
                     cache_conversation=True,
-                    tools=None,  # Orchestrator has NO tools — only delegates
+                    tools=orchestrator_tool_specs,
                     temperature=0.0,
                     on_text=_on_text if bridge else None,
                     model=model,
@@ -217,6 +266,164 @@ async def run_orchestrator(
 
         response_text = response.content or ""
 
+        async def _publish_text(text: str) -> None:
+            """Surface the orchestrator's user-facing prose (control blocks stripped)."""
+            await event_bus.publish(
+                "operator.stream",
+                {
+                    "event_type": "operator.stream",
+                    "session_id": session_id,
+                    "content": text,
+                },
+            )
+            if bridge:
+                bridge.publish(EVT_TEXT_DELTA, {"text": text})
+
+        # ── Native tool calls (delegate / web_search / web_fetch / remember) ──
+        # When the model answered with tool calls, everything it asked for in
+        # this response is handled here — research and memory as tools, and
+        # all delegate calls concurrently. There must be no `continue` past
+        # this point without feeding tool results back: strict providers
+        # reject a follow-up request whose tool_use blocks were never answered.
+        if native_tools and response.tool_uses:
+            visible_text = strip_control_blocks(response_text)
+            if visible_text:
+                await _publish_text(visible_text)
+
+            delegate_args = [
+                dict(tu.arguments or {})
+                for tu in response.tool_uses
+                if tu.name == DELEGATE_TOOL
+            ]
+            tool_call_dicts = [
+                {"type": "tool_use", "id": tu.id, "name": tu.name, "input": tu.arguments or {}}
+                for tu in response.tool_uses
+            ]
+            new_messages.append(
+                {
+                    "role": "assistant",
+                    "content": {
+                        "text": visible_text,
+                        "delegation": delegate_args,
+                        "tool_calls": tool_call_dicts,
+                    },
+                }
+            )
+            history.append(
+                LLMMessage(role="assistant", content=visible_text, tool_calls=tool_call_dicts)
+            )
+
+            if session_id and len(response.tool_uses) > 1:
+                get_task_registry().update(
+                    session_id,
+                    step=f"Running {len(response.tool_uses)} parallel steps",
+                )
+
+            from vigilus.config import get_settings
+
+            settings = get_settings()
+            batch = await execute_tool_batch(
+                response.tool_uses,
+                session_id=session_id,
+                bridge=bridge,
+                cancel_event=cancel_event,
+                unattended=unattended,
+                remaining_delegations=max_delegations - delegations_used,
+                max_parallel=settings.max_parallel_delegations,
+            )
+
+            saw_cancel = False
+            for tool_use, tool_res in zip(response.tool_uses, batch):
+                if isinstance(tool_res.meta.get("exception"), TaskCancelled):
+                    saw_cancel = True
+                    continue
+
+                if tool_res.is_delegation:
+                    delegation_result = tool_res.meta["delegation_result"]
+                    operator_name = tool_res.operator or "unknown"
+                    result_summary = format_delegation_result(delegation_result)
+                    last_result_summary = result_summary
+                    delegations_used += 1
+                    if bridge:
+                        bridge.publish(
+                            EVT_DELEGATION_RESULT,
+                            {
+                                "operator": operator_name,
+                                "status": delegation_result.get("status"),
+                                "loop_detected": delegation_result.get("loop_detected", False),
+                                "iteration_limit_reached": delegation_result.get(
+                                    "iteration_limit_reached", False
+                                ),
+                                "summary": result_summary[:500],
+                            },
+                        )
+                    new_messages.append(
+                        {
+                            "role": "tool",
+                            "content": {
+                                "operator": operator_name,
+                                "result": result_summary,
+                                "status": delegation_result.get("status"),
+                                "tool": DELEGATE_TOOL,
+                                "tool_use_id": tool_res.tool_use_id,
+                            },
+                            "operator_id": operator_name,
+                        }
+                    )
+                else:
+                    # Research, memory, unknown tools, and budget-refused
+                    # delegations all report back through this branch.
+                    attribution = tool_res.operator or "Vigilus"
+                    new_messages.append(
+                        {
+                            "role": "tool",
+                            "content": {
+                                "operator": attribution,
+                                "result": tool_res.text,
+                                "status": "success" if tool_res.ok else "error",
+                                "tool": tool_res.name,
+                                "tool_use_id": tool_res.tool_use_id,
+                            },
+                            "operator_id": attribution,
+                        }
+                    )
+                history.append(
+                    LLMMessage(
+                        role="tool",
+                        name=tool_res.name,
+                        tool_use_id=tool_res.tool_use_id,
+                        content=tool_res.text,
+                    )
+                )
+
+            if saw_cancel:
+                logger.info("orchestrator.cancelled_while_delegating", session_id=session_id)
+                new_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": "⏹ Task cancelled — stopped while waiting for the AI provider.",
+                    }
+                )
+                if bridge:
+                    bridge.publish(EVT_ERROR, {"error": "Task cancelled by user."})
+                break
+
+            if cancel_event is not None and cancel_event.is_set():
+                logger.info("orchestrator.cancelled_after_delegation", session_id=session_id)
+                new_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": "⏹ Task cancelled — stopped before any further steps were taken.",
+                    }
+                )
+                if bridge:
+                    bridge.publish(EVT_ERROR, {"error": "Task cancelled by user."})
+                break
+
+            # Budget-capped delegate calls were refused inside the batch, so
+            # the model sees why nothing happened and can conclude instead.
+            continue
+
         # Persist any {"remember": ...} blocks the orchestrator emitted and
         # strip them from the visible reply.
         from vigilus.core.memory import parse_remember_blocks, save_memory
@@ -235,19 +442,6 @@ async def run_orchestrator(
             )
         if remembered:
             await db.commit()
-
-        async def _publish_text(text: str) -> None:
-            """Surface the orchestrator's user-facing prose (control blocks stripped)."""
-            await event_bus.publish(
-                "operator.stream",
-                {
-                    "event_type": "operator.stream",
-                    "session_id": session_id,
-                    "content": text,
-                },
-            )
-            if bridge:
-                bridge.publish(EVT_TEXT_DELTA, {"text": text})
 
         # ── Research blocks ({"search"}/{"fetch"}) ──────────
         # Vigilus may research before planning. If it emitted research blocks,

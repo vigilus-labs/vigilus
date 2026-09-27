@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     operator_max_iterations: int = Field(default=10, ge=1)
     # How many scheduled tasks may run at once on the scheduler leader.
     schedule_max_concurrent: int = Field(default=2, ge=1)
+    # Cap on delegate tool calls the orchestrator may run concurrently in one
+    # response (native tool delegation). Each branch gets its own DB session.
+    max_parallel_delegations: int = Field(default=3, ge=1)
 
     # ── CORS ────────────────────────────────────────────────
     cors_origins: list[str] = ["http://localhost:5173"]

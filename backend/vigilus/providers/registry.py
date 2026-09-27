@@ -38,7 +38,7 @@ def build_provider(provider_row: Provider) -> AgentLLM:
             default_model=provider_row.default_model or "gpt-4o",
         )
     elif provider_row.type == ProviderType.openrouter:
-        return OpenAICompatProvider(
+        provider = OpenAICompatProvider(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
             default_model=provider_row.default_model or "openrouter/auto",
@@ -48,6 +48,10 @@ def build_provider(provider_row: Provider) -> AgentLLM:
                 **(provider_row.extra_headers or {}),
             },
         )
+        # OpenRouter speaks the hosted OpenAI protocol and its models
+        # overwhelmingly support tools — unlike self-hosted compat gateways.
+        provider.supports_native_tools = True
+        return provider
     elif provider_row.type == ProviderType.google:
         return GoogleProvider(
             api_key=api_key or "no-key",
