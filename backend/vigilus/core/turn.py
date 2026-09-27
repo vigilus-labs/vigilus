@@ -112,8 +112,12 @@ async def execute_turn(
     cfg = load_orchestrator_config()
     loop_model = resolve_loop_model(model)
 
+    from vigilus.core.orchestrator_tools import orchestrator_uses_native_tools
+
+    native_tools = orchestrator_uses_native_tools(provider)
+
     builder = PromptBuilder(db=db, custom_identity=cfg.custom_identity, soul=cfg.soul)
-    prompt_obj = await builder.build(session_id=session.id)
+    prompt_obj = await builder.build(session_id=session.id, native_tools=native_tools)
     cached_system, system_prompt = system_parts(prompt_obj, system_extra)
     full_system = prompt_obj.render()
     if system_extra:

@@ -187,6 +187,13 @@ class AgentLLM(ABC):
     and present a uniform interface to the Vigilus operator engine.
     """
 
+    # Whether this adapter can be trusted with native tool calling for the
+    # orchestrator. Hosted APIs (Anthropic, OpenAI, Google, OpenRouter) all
+    # support tools; arbitrary OpenAI-compatible gateways (Ollama, llama.cpp,
+    # vLLM) may not, so those providers fall back to the parsed-text control
+    # blocks. See :mod:`vigilus.core.orchestrator_tools`.
+    supports_native_tools: bool = True
+
     @abstractmethod
     async def complete(
         self,

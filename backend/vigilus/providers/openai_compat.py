@@ -10,6 +10,11 @@ from vigilus.providers.openai_provider import OpenAIProvider
 class OpenAICompatProvider(OpenAIProvider):
     """Adapter for OpenAI-compatible endpoints."""
 
+    # Local gateways (Ollama, llama.cpp, vLLM) frequently lack tool support or
+    # reject the tools parameter, so the orchestrator keeps its parsed-text
+    # control blocks here instead of native tool calling.
+    supports_native_tools = False
+
     def __init__(
         self,
         base_url: str,
