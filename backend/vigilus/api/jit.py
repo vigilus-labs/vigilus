@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from vigilus.core.rbac import WardenService
 from vigilus.db.base import get_db
 from vigilus.db.models import JitRequest
-from vigilus.schemas.jit import JitApproveRequest, JitRequestResponse
+from vigilus.schemas.jit import JitApproveRequest, JitRequestResponse, JitRevokeRequest
 
 router = APIRouter(prefix="/jit", tags=["JIT"])
 
@@ -102,4 +102,33 @@ async def deny_jit_request(request_id: str, db: AsyncSession = Depends(get_db)):
         .where(JitRequest.id == request_id)
     )
     req = result.scalar_one()
+    return _to_response(req)
+
+
+@router.post("/{request_id}/revoke", response_model=JitRequestResponse)
+async def revoke_jit_request(
+    request_id: str,
+    body: JitRevokeRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke an approved grant before its TTL expires (#34)."""
+    result = await db.execute(
+        select(JitRequest)
+        .options(selectinload(JitRequest.operator))
+        .where(JitRequest.id == request_id)
+    )
+    req = result.scalar_one_or_none()
+    if not req:
+        raise HTTPException(status_code=404, detail="JIT Request not found")
+
+    warden = WardenService()
+    body = body or JitRevokeRequest()
+    try:
+        await warden.revoke_grant(db, request_id, approver=body.approved_by)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="Only approved grants can be revoked"
+        )
+
+    await db.refresh(req)
     return _to_response(req)

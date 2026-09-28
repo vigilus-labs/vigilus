@@ -45,3 +45,11 @@ class JitApproveRequest(BaseModel):
     ttl_minutes: int | None = None
     single_use: bool = False
     resource: str | None = None
+
+
+class JitRevokeRequest(BaseModel):
+    """Schema for revoking an approved JIT grant before its TTL expires."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    approved_by: str = Field(default="admin_ui", min_length=1)

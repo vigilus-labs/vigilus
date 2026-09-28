@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, Check, X, Clock, AlertCircle } from 'lucide-react';
+import { ShieldCheck, ShieldOff, Check, X, Clock, AlertCircle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { JitRequest } from '@/types';
 import { JitGrantControls, JitGrantOpts } from '@/components/JitGrantControls';
@@ -42,6 +42,18 @@ export default function Jit() {
       fetchRequests();
     } catch (err) {
       console.error('Failed to deny request', err);
+    }
+  };
+
+  const handleRevoke = async (id: string) => {
+    if (!window.confirm('Revoke this grant now? Tools using it will be denied immediately.')) {
+      return;
+    }
+    try {
+      await api.revokeJitRequest(id);
+      fetchRequests();
+    } catch (err) {
+      console.error('Failed to revoke grant', err);
     }
   };
 
@@ -125,12 +137,13 @@ export default function Jit() {
                   <th className="px-4 py-3 font-medium text-text-secondary">Permission</th>
                   <th className="px-4 py-3 font-medium text-text-secondary">Resource</th>
                   <th className="px-4 py-3 font-medium text-text-secondary">Status</th>
+                  <th className="px-4 py-3 font-medium text-text-secondary">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border dark:divide-border">
                 {pastRequests.length === 0 && !loading ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-text-secondary">
+                    <td colSpan={6} className="px-4 py-8 text-center text-text-secondary">
                       No history found.
                     </td>
                   </tr>
@@ -161,6 +174,18 @@ export default function Jit() {
                            <AlertCircle className="w-3.5 h-3.5 mr-1" />}
                           <span className="capitalize">{req.status}</span>
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {req.status === 'approved' && (
+                          <button
+                            onClick={() => handleRevoke(req.id)}
+                            className="inline-flex items-center px-2 py-1 rounded-sm text-[11px] font-medium text-danger bg-danger/10 hover:bg-danger/20 transition-colors"
+                            title="Revoke this grant immediately"
+                          >
+                            <ShieldOff className="w-3 h-3 mr-1" />
+                            Revoke
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
