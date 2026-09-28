@@ -206,6 +206,31 @@ class WardenService:
             {"id": req.id, "operator_id": req.operator_id, "status": req.status.value},
         )
 
+    async def revoke_grant(self, db, request_id: str, approver: str = "admin") -> None:
+        """Revoke an *approved* JIT grant before its TTL expires (#34).
+
+        Mirrors ``deny_request``: only a currently-approved request can be
+        revoked; the backing token becomes dead through the DB status check
+        at enforcement points (``is_token_active``), since tokens themselves
+        are stateless HMAC payloads.
+        """
+        from vigilus.core.events import get_event_bus
+        from vigilus.db.models import JitRequest, JitStatus
+
+        req = await db.get(JitRequest, request_id)
+        if not req or req.status != JitStatus.approved:
+            raise ValueError("Invalid request")
+
+        req.status = JitStatus.revoked
+        req.resolved_at = datetime.now(UTC)
+        req.approved_by = approver
+        await db.commit()
+
+        await get_event_bus().publish(
+            "jit.resolved",
+            {"id": req.id, "operator_id": req.operator_id, "status": req.status.value},
+        )
+
     def issue_token(
         self, operator_id: str, resource: str, permission: Permission, ttl_minutes: int = 15
     ) -> str:
