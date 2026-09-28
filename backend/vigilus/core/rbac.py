@@ -288,6 +288,38 @@ class WardenService:
         except Exception:
             return None
 
+    async def is_token_active(self, db, token: str) -> JITToken | None:
+        """Validate a presented JIT token, including its DB revocation state (#34).
+
+        Tokens are stateless HMAC payloads, so the signature/expiry check alone
+        cannot see a revoke: the backing ``JitRequest`` status is the source of
+        truth. Returns the validated token, or ``None`` when invalid, expired,
+        revoked/expired in the DB, or when the revocation lookup itself fails
+        (fail closed — an outage must never widen access).
+        """
+        from sqlalchemy import select
+
+        from vigilus.db.models import JitRequest, JitStatus
+
+        token_obj = self.validate_token(token)
+        if token_obj is None:
+            return None
+
+        try:
+            result = await db.execute(
+                select(JitRequest.id).where(
+                    JitRequest.token_id == token,
+                    JitRequest.status.in_([JitStatus.revoked, JitStatus.expired]),
+                )
+            )
+            if result.scalars().first() is not None:
+                return None
+        except Exception as e:  # noqa: BLE001 — fail closed on any lookup failure
+            logger.warning("rbac.revocation_check_failed", error=str(e))
+            return None
+
+        return token_obj
+
 
 def _resource_covers(token_resource: str, requested: str) -> bool:
     """True if a JIT token's resource scope covers the requested resource.

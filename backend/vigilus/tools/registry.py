@@ -180,10 +180,12 @@ class ToolRegistry:
             # 3. Policy Check
             req_perm = Permission(tool.required_permission.value)
 
-            # Resolve token if provided
+            # Resolve token if provided. is_token_active adds the DB
+            # revocation check (#34): a stateless HMAC token alone cannot
+            # see a revoke, the backing JitRequest status is the truth.
             token_obj = None
             if jit_token:
-                token_obj = self.warden.validate_token(jit_token)
+                token_obj = await self.warden.is_token_active(db, jit_token)
 
             is_allowed = await self.policy_engine.check_permission(
                 operator=operator,
