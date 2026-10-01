@@ -417,6 +417,10 @@ class ApiClient {
   denyJitRequest(id: string) {
     return this.post<JitRequest>(`/jit/${id}/deny`);
   }
+
+  revokeJitRequest(id: string) {
+    return this.post<JitRequest>(`/jit/${id}/revoke`);
+  }
   
   // ─── Metrics ────────────────────────────────────────────────────────
   
