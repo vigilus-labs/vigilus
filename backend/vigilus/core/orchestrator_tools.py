@@ -271,6 +271,8 @@ async def _run_delegate_tool_call(
     bridge: Any | None,
     cancel_event: Any | None,
     unattended: bool,
+    park: Any | None = None,
+    continuation: dict | None = None,
 ) -> OrchestratorToolResult:
     from vigilus.core.delegation import execute_delegation
     from vigilus.core.events import get_event_bus
@@ -305,6 +307,8 @@ async def _run_delegate_tool_call(
             bridge=bridge,
             cancel_event=cancel_event,
             unattended=unattended,
+            park=park,
+            continuation=continuation,
         )
 
     await get_event_bus().publish(
@@ -338,6 +342,8 @@ async def execute_tool_batch(
     unattended: bool = False,
     remaining_delegations: int = 0,
     max_parallel: int = 3,
+    park: Any | None = None,
+    continuation: dict | None = None,
 ) -> list[OrchestratorToolResult]:
     """Execute one response's worth of orchestrator tool calls.
 
@@ -378,12 +384,18 @@ async def execute_tool_batch(
 
         async def _one(idx: int, tool_use: ToolUse) -> OrchestratorToolResult:
             async with semaphore:
+                branch_continuation = dict(continuation or {})
+                branch_continuation["mode"] = "native"
+                branch_continuation["orchestrator_tool_use_id"] = tool_use.id
+                branch_continuation["operator_name"] = (tool_use.arguments or {}).get("operator")
                 return await _run_delegate_tool_call(
                     tool_use,
                     session_id=session_id,
                     bridge=bridge,
                     cancel_event=cancel_event,
                     unattended=unattended,
+                    park=park,
+                    continuation=branch_continuation,
                 )
 
         executed = delegate_slots[: max(0, remaining_delegations)]
@@ -393,7 +405,11 @@ async def execute_tool_batch(
             *[_one(idx, tu) for idx, tu in executed],
             return_exceptions=True,
         )
+        from vigilus.core.turn_park import TurnParked
+
         for (idx, tu), outcome in zip(executed, gathered):
+            if isinstance(outcome, TurnParked):
+                raise outcome
             if isinstance(outcome, BaseException):
                 results[idx] = OrchestratorToolResult(
                     tool_use_id=tu.id,

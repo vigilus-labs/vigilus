@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from vigilus.core.operator_runtime import OperatorRuntime
 from vigilus.core.tasks import TaskCancelled
+from vigilus.core.turn_park import TurnParked
 from vigilus.db.models import Operator, OperatorTool
 from vigilus.providers.base import LLMMessage, ProviderError
 
@@ -104,6 +105,8 @@ async def execute_delegation(
     bridge: Any | None = None,  # StreamBridge from core.sse
     cancel_event: Any | None = None,  # asyncio.Event — stop when set
     unattended: bool = False,  # scheduled run — use longer JIT wait
+    park: Any | None = None,
+    continuation: dict | None = None,
 ) -> dict[str, Any]:
     """Execute a delegation to a specialist operator.
 
@@ -221,6 +224,8 @@ async def execute_delegation(
             bridge=bridge,
             cancel_event=cancel_event,
             unattended=unattended,
+            park=park,
+            continuation=continuation,
         )
 
         # Extract the final response text
@@ -252,7 +257,7 @@ async def execute_delegation(
             "iteration_limit_reached": iteration_limit_reached,
         }
 
-    except TaskCancelled:
+    except (TaskCancelled, TurnParked):
         raise
     except ProviderError as e:
         # Upstream LLM failure (timeout / 5xx / rate limit) — already retried by

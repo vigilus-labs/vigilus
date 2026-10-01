@@ -279,6 +279,8 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
                         cancel_event=running_task.cancel_event,
                         unattended=True,
                         save_user_message=attempt == 1,
+                        origin="schedule",
+                        deliver_to=task.deliver_to,
                     )
                     last_error = None
                     break
@@ -301,12 +303,32 @@ async def execute_scheduled_task(task_id: str, *, force: bool = False) -> dict:
             if last_error is not None:
                 raise last_error
 
-            result = {
-                "status": "success",
-                "summary": final_text[:2000],
-                "session_id": chat_session.id,
-                "attempt": attempt,
-            }
+            from sqlalchemy import select
+
+            from vigilus.db.models import Turn, TurnStatus
+
+            parked = (
+                await db.execute(
+                    select(Turn).where(
+                        Turn.session_id == chat_session.id,
+                        Turn.status == TurnStatus.awaiting_approval,
+                    )
+                )
+            ).scalars().first()
+            if parked is not None:
+                result = {
+                    "status": "awaiting_approval",
+                    "summary": final_text[:2000],
+                    "session_id": chat_session.id,
+                    "attempt": attempt,
+                }
+            else:
+                result = {
+                    "status": "success",
+                    "summary": final_text[:2000],
+                    "session_id": chat_session.id,
+                    "attempt": attempt,
+                }
         except OrchestratorNotConfigured as e:
             result = {"status": "error", "error": str(e), "session_id": chat_session_id}
         except Exception as e:

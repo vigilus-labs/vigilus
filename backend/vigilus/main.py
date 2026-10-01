@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -131,6 +132,16 @@ async def lifespan(app: FastAPI):
 
     await recover_stale_running_tasks()
 
+    # Turns left 'running' died with the previous process. Parked turns stay
+    # awaiting approval so a later grant can resume them.
+    from vigilus.core.turn_recovery import recover_interrupted_turns, run_park_sweeper
+    from vigilus.core.turn_resume import install_resume_subscriber
+
+    await recover_interrupted_turns()
+    install_resume_subscriber()
+    park_stop = asyncio.Event()
+    park_sweeper = asyncio.create_task(run_park_sweeper(park_stop))
+
     # Start the cron scheduler for recurring tasks
     from vigilus.core.scheduler import get_scheduler
 
@@ -211,6 +222,8 @@ async def lifespan(app: FastAPI):
 
     # ── Shutdown ────────────────────────────────────────────
     logger.info("shutdown.start")
+    park_stop.set()
+    park_sweeper.cancel()
     await get_gateway().shutdown()
     await get_scheduler().shutdown()
 

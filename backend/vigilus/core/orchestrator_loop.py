@@ -126,6 +126,7 @@ async def run_orchestrator(
     bridge: StreamBridge | None = None,
     cancel_event: Any | None = None,  # asyncio.Event — stop when set
     unattended: bool = False,  # scheduled run — use longer JIT wait
+    park: Any | None = None,  # TurnParkContext — park strict JIT waits
 ) -> list[dict[str, Any]]:
     """Run the Vigilus orchestrator loop.
 
@@ -322,6 +323,21 @@ async def run_orchestrator(
             from vigilus.config import get_settings
 
             settings = get_settings()
+            if park is not None:
+                from vigilus.core.turn_park import dump_messages
+
+                park.continuation = {
+                    "mode": "native",
+                    "history": dump_messages(history),
+                    "new_messages": list(new_messages),
+                    "system_prompt": system_prompt,
+                    "cached_system": cached_system,
+                    "provider_id": provider_id,
+                    "provider_type": provider_type,
+                    "model": model,
+                    "delegations_used": delegations_used,
+                    "max_delegations": max_delegations,
+                }
             batch = await execute_tool_batch(
                 response.tool_uses,
                 session_id=session_id,
@@ -330,6 +346,8 @@ async def run_orchestrator(
                 unattended=unattended,
                 remaining_delegations=max_delegations - delegations_used,
                 max_parallel=settings.max_parallel_delegations,
+                park=park,
+                continuation=park.continuation if park is not None else None,
             )
 
             saw_cancel = False
@@ -566,6 +584,25 @@ async def run_orchestrator(
 
         # Get a fresh DB session for delegation (it may run its own queries)
         factory = get_session_factory()
+        text_continuation = None
+        if park is not None:
+            from vigilus.core.turn_park import dump_messages
+
+            text_continuation = {
+                "mode": "text",
+                "history": dump_messages(history),
+                "new_messages": list(new_messages),
+                "response_text": response_text,
+                "operator_name": operator_name,
+                "system_prompt": system_prompt,
+                "cached_system": cached_system,
+                "provider_id": provider_id,
+                "provider_type": provider_type,
+                "model": model,
+                "delegations_used": delegations_used,
+                "max_delegations": max_delegations,
+            }
+            park.continuation = text_continuation
         try:
             async with factory() as del_db:
                 delegation_result = await execute_delegation(
@@ -575,6 +612,8 @@ async def run_orchestrator(
                     bridge=bridge,
                     cancel_event=cancel_event,
                     unattended=unattended,
+                    park=park,
+                    continuation=text_continuation,
                 )
         except TaskCancelled:
             logger.info("orchestrator.cancelled_while_delegating", session_id=session_id)

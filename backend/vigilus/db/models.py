@@ -115,6 +115,14 @@ class JitStatus(str, enum.Enum):
     revoked = "revoked"
 
 
+class TurnStatus(str, enum.Enum):
+    running = "running"
+    awaiting_approval = "awaiting_approval"
+    completed = "completed"
+    failed = "failed"
+    cancelled = "cancelled"
+
+
 class ScopeSource(str, enum.Enum):
     """Where a Scope observation (scan / finding) came from."""
 
@@ -354,6 +362,36 @@ class Session(Base):
     )
     actions = relationship("Action", back_populates="session")
     operator = relationship("Operator", back_populates="sessions")
+    turns = relationship("Turn", back_populates="session")
+
+
+class Turn(Base):
+    """Checkpoint for one orchestrator turn.
+
+    A strict-mode JIT wait parks the turn here and releases the coroutine.
+    Approval resumes from ``operator_messages`` and ``pending_call``.
+    """
+
+    __tablename__ = "turns"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    session_id = Column(
+        String(36), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status = Column(Enum(TurnStatus), nullable=False, default=TurnStatus.running)
+    origin = Column(String(32), nullable=True)  # web | telegram | discord | schedule
+    operator_id = Column(String(36), ForeignKey("operators.id"), nullable=True)
+    pending_call = Column(JSON, nullable=True)
+    operator_messages = Column(JSON, nullable=True)
+    jit_request_id = Column(String(36), nullable=True, index=True)
+    deliver_to = Column(JSON, nullable=True)
+    unattended = Column(Boolean, default=False, nullable=False)
+    error = Column(Text, nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
+
+    session = relationship("Session", back_populates="turns")
 
 
 class Message(Base):

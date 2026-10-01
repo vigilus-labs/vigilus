@@ -18,6 +18,7 @@ export type SSEEventType =
   | 'text_delta'
   | 'text_chunk'
   | 'jit_request'
+  | 'turn_parked'
   | 'done'
   | 'error';
 
@@ -105,6 +106,7 @@ export class ChatStream {
       'text_delta',
       'text_chunk',
       'jit_request',
+      'turn_parked',
       'done',
       'error',
     ];

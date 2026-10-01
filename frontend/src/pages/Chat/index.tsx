@@ -114,6 +114,9 @@ export default function Chat() {
 
   // JIT approval requests raised during this conversation
   const [jitItems, setJitItems] = useState<JitChatItem[]>([]);
+  // Set when this page sees a live turn_parked event, before the transcript
+  // reload lands. Cleared once an approval resolves the request.
+  const [awaitingLive, setAwaitingLive] = useState(false);
 
   // Approvals may be made from the app-wide banner or the JIT page rather
   // than the inline card. Reflect their globally broadcast resolution here
@@ -126,6 +129,7 @@ export default function Chat() {
         setJitItems(prev => prev.map(item => (
           item.id === id ? { ...item, resolving: false, resolution: status } : item
         )));
+        setAwaitingLive(false);
       },
     },
   });
@@ -193,6 +197,9 @@ export default function Chat() {
     : null;
   // "Busy" = a turn is in progress, whether driven locally (SSE) or restored.
   const isBusy = loading || !!activeRunning;
+  const latestAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+  const latestAssistantText = typeof latestAssistant?.content === 'string' ? latestAssistant.content : '';
+  const latestAssistantAwaitsApproval = latestAssistantText.toLowerCase().includes('awaiting approval');
 
   // Restore the live action feed for a turn we did NOT start locally (no SSE):
   // poll its buffered activity from the server so the actions reappear.
@@ -526,6 +533,7 @@ export default function Chat() {
       const text = (data.text ?? '').trim();
       if (text) setStreamedTexts(prev => [...prev, text]);
     });
+    stream.on('turn_parked', () => setAwaitingLive(true));
     stream.on('jit_request', (data) => {
       const jitId = data.id;
       if (!jitId) return;
@@ -1455,6 +1463,14 @@ export default function Chat() {
                     </div>
                   </div>
                 ))}
+
+                {(awaitingLive || latestAssistantAwaitsApproval) && (
+                  <div className="flex justify-center">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                      Awaiting approval
+                    </span>
+                  </div>
+                )}
 
                 {/* Inline JIT approval cards */}
                 {jitItems.map(item => (

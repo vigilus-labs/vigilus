@@ -221,7 +221,14 @@ async def handle_inbound(inbound: InboundMessage, adapter: ChannelAdapter) -> No
         event_bus.subscribe("jit.requested", _on_jit_requested)
         try:
             await adapter.send_typing(inbound.chat_id)
-            final = await run_turn(db, session, text, bridge=bridge)
+            final = await run_turn(
+                db,
+                session,
+                text,
+                bridge=bridge,
+                origin=inbound.platform,
+                deliver_to={"platform": inbound.platform, "chat_id": inbound.chat_id},
+            )
         except OrchestratorNotConfigured:
             await adapter.send(
                 inbound.chat_id,
