@@ -136,6 +136,10 @@ class ToolRegistry:
         jit_wait_seconds: int | None = None,
         unattended: bool = False,
         cancel_event: asyncio.Event | None = None,
+        park: Any | None = None,
+        tool_use_id: str | None = None,
+        continuation: dict | None = None,
+        operator_messages: list | None = None,
     ) -> ToolResult:
         """Execute a tool invocation.
 
@@ -248,8 +252,27 @@ class ToolRegistry:
                     token_obj = warden.validate_token(token)
                     self._grant_cache.clear()
                 else:
-                    # Strict trust: PAUSE here until the user approves or
-                    # denies (inline chat card or JIT page), or we time out.
+                    # Strict trust: park the turn and release this coroutine
+                    # when a park context is attached. Otherwise pause until
+                    # the user approves or denies, or the wait times out.
+                    from vigilus.config import get_settings
+
+                    if park is not None and get_settings().jit_park_resume:
+                        from vigilus.core.turn_park import park_for_approval
+
+                        await park_for_approval(
+                            db,
+                            park,
+                            req,
+                            tool,
+                            resource,
+                            req_perm,
+                            jit_wait_seconds,
+                            arguments=arguments,
+                            tool_use_id=tool_use_id,
+                            continuation=continuation,
+                            operator_messages=operator_messages,
+                        )
                     if cancel_event is None:
                         outcome = await self._wait_for_jit_resolution(req.id, jit_wait_seconds)
                     else:

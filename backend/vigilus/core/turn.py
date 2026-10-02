@@ -87,6 +87,8 @@ async def execute_turn(
     save_user_message: bool = True,
     auto_title: bool = True,
     unattended: bool = False,
+    origin: str | None = None,
+    deliver_to: dict | None = None,
 ) -> TurnResult:
     """Persist the user message, run the orchestrator to completion, persist
     the replies, and return what was produced.
@@ -107,6 +109,9 @@ async def execute_turn(
             :func:`turn_title`). Callers that set a custom title (e.g. the
             scheduler) should pass ``False``.
         unattended: Scheduled run — operators use the longer JIT wait.
+        origin: Where the turn started (web, telegram, discord, schedule).
+            Defaults to the session origin.
+        deliver_to: Channel target resumed runs should send the final reply to.
     """
     provider, provider_row, model = await resolve_orchestrator_provider(db)
     cfg = load_orchestrator_config()
@@ -169,20 +174,77 @@ async def execute_turn(
         )
         cached_system, system_prompt = system_parts(prompt_obj, system_extra)
 
-    new_msgs = await run_orchestrator(
-        llm_history,
-        provider,
-        system_prompt or "",
-        db=db,
-        session_id=session.id,
-        provider_id=provider_row.id,
-        provider_type=provider_row.type.value,
-        model=loop_model,
-        cached_system=cached_system,
-        bridge=bridge,
-        cancel_event=cancel_event,
-        unattended=unattended,
-    )
+    from vigilus.config import get_settings
+    from vigilus.core.sse import EVT_TURN_PARKED
+    from vigilus.core.tasks import get_task_registry
+    from vigilus.core.turn_park import TurnParkContext, TurnParked
+    from vigilus.db.models import Turn, TurnStatus
+
+    park: TurnParkContext | None = None
+    if get_settings().jit_park_resume:
+        park = TurnParkContext(
+            session_id=session.id,
+            origin=origin or session.origin or "web",
+            deliver_to=deliver_to,
+            unattended=unattended,
+        )
+        turn_row = Turn(
+            session_id=session.id,
+            status=TurnStatus.running,
+            origin=park.origin,
+            deliver_to=deliver_to,
+            unattended=unattended,
+        )
+        db.add(turn_row)
+        await db.commit()
+        await db.refresh(turn_row)
+        park.turn_id = turn_row.id
+
+    try:
+        new_msgs = await run_orchestrator(
+            llm_history,
+            provider,
+            system_prompt or "",
+            db=db,
+            session_id=session.id,
+            provider_id=provider_row.id,
+            provider_type=provider_row.type.value,
+            model=loop_model,
+            cached_system=cached_system,
+            bridge=bridge,
+            cancel_event=cancel_event,
+            unattended=unattended,
+            park=park,
+        )
+    except TurnParked as parked:
+        awaiting = (
+            "This turn is awaiting approval. It will resume here when the "
+            "request is approved or denied."
+        )
+        if bridge is not None:
+            bridge.publish(
+                EVT_TURN_PARKED,
+                {
+                    "turn_id": parked.turn_id,
+                    "session_id": session.id,
+                    "detail": "Awaiting approval",
+                },
+            )
+            bridge.close()
+        get_task_registry().unregister(session.id)
+        row = Message(session_id=session.id, role=MessageRole.assistant, content=awaiting)
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        return TurnResult(text=awaiting, assistant_message=row, user_message=user_message)
+    except Exception as exc:
+        if park is not None and park.turn_id:
+            failed = await db.get(Turn, park.turn_id)
+            if failed is not None and failed.status == TurnStatus.running:
+                failed.status = TurnStatus.failed
+                failed.error = str(exc)[:2000]
+                await db.commit()
+        raise
 
     final_text = ""
     assistant_message: Message | None = None
@@ -199,6 +261,10 @@ async def execute_turn(
             assistant_message = row
             if isinstance(m["content"], str):
                 final_text = m["content"]
+    if park is not None and park.turn_id:
+        finished = await db.get(Turn, park.turn_id)
+        if finished is not None and finished.status == TurnStatus.running:
+            finished.status = TurnStatus.completed
     await db.commit()
     if assistant_message is not None:
         await db.refresh(assistant_message)

@@ -341,6 +341,7 @@ async def send_message(session_id: str, data: MessageCreate, db: AsyncSession = 
         EVT_TEXT_DELTA,
         EVT_ERROR,
         "loop_detected",
+        "turn_parked",
     }
 
     def _record_activity(event: str, data: dict) -> None:

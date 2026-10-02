@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     # chat, so the global JIT banner / channels need a longer window for a
     # human to approve before we fail closed. Never auto-grants.
     jit_wait_seconds_unattended: int = 1800
+    # Park a strict-mode JIT wait instead of holding a coroutine. Set false to
+    # restore the polling wait for one release.
+    jit_park_resume: bool = True
 
     # ── Task execution ──────────────────────────────────────
     # Bound an individual provider request so a stalled upstream cannot leave

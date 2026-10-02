@@ -195,6 +195,8 @@ class OperatorRuntime:
         bridge: Any | None = None,  # StreamBridge from core.sse
         cancel_event: Any | None = None,  # asyncio.Event — stop when set
         unattended: bool = False,  # scheduled run — use longer JIT wait
+        park: Any | None = None,  # TurnParkContext — park instead of polling
+        continuation: dict | None = None,
     ) -> tuple[list[LLMMessage], list[dict[str, Any]]]:
         """Run the operator loop until a final text response is generated.
 
@@ -442,6 +444,14 @@ class OperatorRuntime:
                             },
                         )
 
+                    message_snapshot = None
+                    if park is not None:
+                        from vigilus.core.turn_park import dump_messages
+
+                        park.operator_id = self.operator.id
+                        park.operator_messages = dump_messages(messages)
+                        message_snapshot = list(park.operator_messages)
+
                     result = await self.tool_registry.execute(
                         tool_id_or_name=tool_use.name,
                         arguments=tool_use.arguments,
@@ -450,6 +460,10 @@ class OperatorRuntime:
                         jit_token=jit_token,
                         unattended=unattended,
                         cancel_event=cancel_event,
+                        park=park,
+                        tool_use_id=tool_use.id,
+                        continuation=continuation,
+                        operator_messages=message_snapshot,
                     )
 
                     raw_output = result.output if result.success else f"Error: {result.error}"
@@ -506,6 +520,74 @@ class OperatorRuntime:
             )
 
         return messages, tool_history
+
+    async def continue_after_park(
+        self,
+        messages: list[LLMMessage],
+        pending: dict[str, Any],
+        *,
+        approved: bool,
+        jit_token: str | None = None,
+        session_id: str | None = None,
+        bridge: Any | None = None,
+        cancel_event: Any | None = None,
+        unattended: bool = False,
+        park: Any | None = None,
+        continuation: dict | None = None,
+    ) -> tuple[list[LLMMessage], list[dict[str, Any]]]:
+        """Finish the parked tool call, then continue the operator loop.
+
+        An approved call is executed with the grant token. Any other resolution
+        is reported back as a denial so the operator can tell the user.
+        """
+        tool_name = pending.get("tool") or ""
+        tool_use_id = pending.get("tool_use_id")
+        arguments = dict(pending.get("arguments") or {})
+        message_snapshot = None
+        if park is not None:
+            from vigilus.core.turn_park import dump_messages
+
+            park.operator_id = self.operator.id
+            park.operator_messages = dump_messages(messages)
+            message_snapshot = list(park.operator_messages)
+        if approved:
+            result = await self.tool_registry.execute(
+                tool_id_or_name=tool_name,
+                arguments=arguments,
+                operator=self.operator,
+                session_id=session_id,
+                jit_token=jit_token,
+                unattended=unattended,
+                cancel_event=cancel_event,
+                park=park,
+                tool_use_id=tool_use_id,
+                continuation=continuation,
+                operator_messages=message_snapshot,
+            )
+            content = result.output if result.success else f"Error: {result.error}"
+        else:
+            content = (
+                "The user DENIED this action. Do not retry it. "
+                "Report what you were unable to do and continue with "
+                "anything that does not require this permission."
+            )
+        messages.append(
+            LLMMessage(
+                role="tool",
+                name=tool_name,
+                tool_use_id=tool_use_id,
+                content=content or "",
+            )
+        )
+        return await self.run(
+            messages,
+            session_id=session_id,
+            bridge=bridge,
+            cancel_event=cancel_event,
+            unattended=unattended,
+            park=park,
+            continuation=continuation,
+        )
 
     async def _fit_context(self, messages: list[LLMMessage], *, session_id: str | None) -> None:
         """Drop old tool bodies, then summarize if the window is still full."""

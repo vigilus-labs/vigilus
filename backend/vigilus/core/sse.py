@@ -93,6 +93,9 @@ EVT_TEXT_CHUNK = "text_chunk"
 # A JIT approval request was created during this turn
 EVT_JIT_REQUEST = "jit_request"
 
+# The turn parked to wait for JIT approval and released its coroutine
+EVT_TURN_PARKED = "turn_parked"
+
 # Turn complete
 EVT_DONE = "done"
 

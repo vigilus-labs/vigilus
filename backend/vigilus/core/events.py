@@ -20,6 +20,7 @@ class EventType(str, enum.Enum):
     ACTION_UPDATED = "action.updated"
     JIT_REQUESTED = "jit.requested"
     JIT_RESOLVED = "jit.resolved"
+    TURN_PARKED = "turn.parked"
     OPERATOR_STREAM = "operator.stream"
     SERVER_STATUS_CHANGED = "server.status_changed"
     MCP_SERVER_STATUS = "mcp.server_status"
