@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from vigilus.db.models import MessageRole
+from vigilus.db.models import ActionOutcome, MessageRole
 
 
 class SessionCreate(BaseModel):
@@ -65,3 +65,28 @@ class MessageResponse(BaseModel):
     content: str | dict[str, Any] | list[Any]
     operator_id: str | None = None
     created_at: datetime
+
+
+class TraceStep(BaseModel):
+    """One audited tool call in a reply's work trace (output fetched separately)."""
+
+    action_id: str
+    event: str
+    actor: str
+    operator_id: str | None = None
+    tool_name: str | None = None
+    server_id: str | None = None
+    server_name: str | None = None
+    args: dict[str, Any] | None = None
+    outcome: ActionOutcome
+    error: str | None = None
+    duration_ms: float | None = None
+    created_at: datetime
+
+
+class TurnTraceResponse(BaseModel):
+    """The tool calls behind one assistant reply."""
+
+    message_id: str
+    steps: list[TraceStep]
+    truncated: int = 0

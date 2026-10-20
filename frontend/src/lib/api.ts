@@ -19,6 +19,7 @@ import type {
   Message,
   SendMessage,
   Action,
+  TurnTrace,
   JitRequest,
   ScheduledTask,
   CreateScheduledTask,
@@ -367,6 +368,10 @@ class ApiClient {
 
   listMessages(sessionId: string) {
     return this.get<Message[]>(`/sessions/${sessionId}/messages`);
+  }
+
+  getSessionTrace(sessionId: string) {
+    return this.get<TurnTrace[]>(`/sessions/${sessionId}/trace`);
   }
 
   sendMessage(sessionId: string, data: SendMessage) {

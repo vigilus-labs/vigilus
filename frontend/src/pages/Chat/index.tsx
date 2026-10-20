@@ -5,9 +5,10 @@ import { MemoryPanel } from '@/components/MemoryPanel';
 import { JitGrantControls, JitGrantOpts } from '@/components/JitGrantControls';
 import { Markdown } from '@/components/Markdown';
 import { ProviderWizard } from '@/components/ProviderWizard';
+import { TurnTrace } from '@/components/TurnTrace';
 import { ChatStream, ActivityEvent, SSEEventType, SSEEventData, nextActivityId } from '@/lib/sse';
 import { useVigilusEvents } from '@/lib/ws';
-import { Session, Message as Msg, Provider, Operator, RunningTask, CommandSpec, CommandResult } from '@/types';
+import { Session, Message as Msg, Provider, Operator, RunningTask, CommandSpec, CommandResult, TurnTrace as TurnTraceData } from '@/types';
 
 interface JitChatItem {
   id: string;
@@ -93,6 +94,18 @@ export default function Chat() {
 
   // Activity feed for live streaming
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
+  // What ran behind each assistant reply, keyed by message id. Message ids are
+  // unique across sessions, so traces from other sessions can stay here.
+  const [traces, setTraces] = useState<Record<string, TurnTraceData>>({});
+  const loadTrace = useCallback((sessionId: string) => {
+    api.getSessionTrace(sessionId)
+      .then(list => setTraces(prev => {
+        const next = { ...prev };
+        for (const t of list) next[t.message_id] = t;
+        return next;
+      }))
+      .catch(() => {});  // a missing trace must never block the transcript
+  }, []);
   // Orchestrator prose streamed mid-turn (SSE `text_delta`). Each entry is an
   // assistant message the backend has already produced but not yet persisted —
   // rendered as a normal bubble so the plan ("I'll have X do Y…") is visible
@@ -238,6 +251,7 @@ export default function Chat() {
     if (prev && !cur && !loading && activeSession && prev === activeSession.id) {
       // Drop the streamed placeholders only once the persisted messages are in
       // hand, so the prose never blinks out of the transcript.
+      loadTrace(activeSession.id);
       api.listMessages(activeSession.id)
         .then(setMessages)
         .catch(() => {})
@@ -354,6 +368,7 @@ export default function Chat() {
     setStreamedTexts([]);
     setStreamingText('');
     try {
+      loadTrace(sess.id);
       const msgs = await api.listMessages(sess.id);
       setMessages(msgs);
       autoScrollRef.current = true;
@@ -557,6 +572,7 @@ export default function Chat() {
 
     try {
       await api.sendMessage(activeSession.id, { content: userMsg });
+      loadTrace(activeSession.id);
       const msgs = await api.listMessages(activeSession.id);
       // Swap placeholders for the persisted messages in one batch — the same
       // text is now in `msgs`, so doing both together avoids a duplicate flash.
@@ -1400,6 +1416,9 @@ export default function Chat() {
                             <div className="max-w-full px-4 py-3 rounded-2xl bg-surface dark:bg-surface text-text-primary dark:text-text-primary border border-border dark:border-border rounded-tl-sm">
                               <Markdown>{renderMessageContent(msg.content)}</Markdown>
                             </div>
+                          )}
+                          {msg.role === 'assistant' && traces[msg.id] && (
+                            <TurnTrace trace={traces[msg.id]} />
                           )}
                         </div>
                       </div>

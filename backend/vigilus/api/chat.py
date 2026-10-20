@@ -15,9 +15,11 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
+from vigilus.core.audit import redact_args
 from vigilus.core.events import get_event_bus
 from vigilus.core.orchestrator import OrchestratorNotConfigured
 from vigilus.core.sse import (
@@ -35,15 +37,18 @@ from vigilus.core.sse import (
     unregister_bridge,
 )
 from vigilus.core.tasks import get_task_registry
+from vigilus.core.trace import TRACE_EVENTS, group_actions_by_reply
 from vigilus.core.turn import execute_turn, turn_title
 from vigilus.db.base import get_db
-from vigilus.db.models import ChannelChat, Message, Operator, Session
+from vigilus.db.models import Action, ChannelChat, Message, Operator, Server, Session
 from vigilus.schemas.chat import (
     MessageCreate,
     MessageResponse,
     SessionCreate,
     SessionResponse,
     SessionUpdate,
+    TraceStep,
+    TurnTraceResponse,
 )
 
 router = APIRouter(tags=["Chat"])
@@ -310,6 +315,77 @@ async def list_messages(session_id: str, db: AsyncSession = Depends(get_db)):
         select(Message).where(Message.session_id == session_id).order_by(Message.created_at)
     )
     return [_message_to_response(m) for m in result.scalars().all()]
+
+
+@router.get("/sessions/{session_id}/trace", response_model=list[TurnTraceResponse])
+async def session_trace(session_id: str, db: AsyncSession = Depends(get_db)):
+    """The audited tool calls behind each assistant reply in a session.
+
+    Built from the audit log, so it covers history from before this endpoint
+    existed. Tool output is left out; ``GET /api/actions/{id}`` returns it.
+    """
+    if await db.get(Session, session_id) is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    messages = (
+        (await db.execute(select(Message).where(Message.session_id == session_id))).scalars().all()
+    )
+    actions = (
+        (
+            await db.execute(
+                select(Action)
+                .options(defer(Action.output))
+                .where(Action.session_id == session_id, Action.event.in_(TRACE_EVENTS))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    traces = group_actions_by_reply(messages, actions)
+
+    # Tools take ``server_id`` as an id, a name or a hostname (LLMs usually know
+    # servers by name), so resolve whichever it is for display.
+    def _server_ref(action: Action) -> str | None:
+        if action.server_id:
+            return action.server_id
+        ref = action.args.get("server_id") if isinstance(action.args, dict) else None
+        return ref if isinstance(ref, str) and ref else None
+
+    refs = {ref for t in traces.values() for a in t.steps if (ref := _server_ref(a))}
+    names: dict[str, str] = {}
+    if refs:
+        rows = await db.execute(
+            select(Server.id, Server.name, Server.hostname).where(
+                or_(Server.id.in_(refs), Server.name.in_(refs), Server.hostname.in_(refs))
+            )
+        )
+        for sid, name, hostname in rows.all():
+            names[sid] = names[name] = names[hostname] = name
+
+    def _step(action: Action) -> TraceStep:
+        ref = _server_ref(action)
+        return TraceStep(
+            action_id=action.id,
+            event=action.event,
+            actor=action.actor,
+            operator_id=action.operator_id,
+            tool_name=action.tool_name,
+            server_id=ref,
+            server_name=names.get(ref, ref) if ref else None,
+            # Rows written before args were redacted at write time.
+            args=redact_args(action.args) if isinstance(action.args, dict) else None,
+            outcome=action.outcome,
+            error=action.error,
+            duration_ms=action.duration_ms,
+            created_at=action.created_at,
+        )
+
+    return [
+        TurnTraceResponse(
+            message_id=t.message_id, steps=[_step(a) for a in t.steps], truncated=t.truncated
+        )
+        for t in traces.values()
+    ]
 
 
 @router.post("/sessions/{session_id}/messages", response_model=MessageResponse)
