@@ -428,7 +428,7 @@ class Action(Base):
     # Actions page shows when a row is expanded.
     output = Column(Text, nullable=True)
     duration_ms = Column(Float, nullable=True)
-    session_id = Column(String(36), ForeignKey("sessions.id"), nullable=True)
+    session_id = Column(String(36), ForeignKey("sessions.id"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     # relationships

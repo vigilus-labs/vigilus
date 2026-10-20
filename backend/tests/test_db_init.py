@@ -99,3 +99,38 @@ async def test_stamped_db_does_not_get_tables_from_create_all(file_db, monkeypat
     await close_db()
     await init_db()
     assert calls == []
+
+
+def _indexes(db, table: str) -> set[str]:
+    conn = sqlite3.connect(db)
+    try:
+        return {r[1] for r in conn.execute(f"PRAGMA index_list({table})")}
+    finally:
+        conn.close()
+
+
+async def test_actions_session_id_index_migrates_up_and_down(file_db):
+    """c9a4e2f1b7d3 adds ix_actions_session_id; its downgrade removes it."""
+    from alembic import command
+
+    from vigilus.core.preflight import _alembic_config
+
+    await init_db()
+    assert "ix_actions_session_id" in _indexes(file_db, "actions")  # create_all path
+
+    # Put the DB one revision back, as an existing install would be.
+    async with get_engine().begin() as conn:
+
+        def _downgrade(sync_conn):
+            cfg = _alembic_config()
+            cfg.attributes["connection"] = sync_conn
+            command.downgrade(cfg, "b4e8c1d92a07")
+
+        await conn.run_sync(_downgrade)
+    await close_db()
+    assert "ix_actions_session_id" not in _indexes(file_db, "actions")
+    assert _version(file_db) == "b4e8c1d92a07"
+
+    await init_db()  # startup upgrades it back to head
+    assert "ix_actions_session_id" in _indexes(file_db, "actions")
+    assert _version(file_db) == alembic_heads()[0]
