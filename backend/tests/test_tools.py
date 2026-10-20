@@ -114,3 +114,63 @@ async def test_tool_registry_policy_deny(db_session):
     res = await registry.execute("dangerous_tool", {}, operator=op, jit_wait_seconds=0)
     assert res.success is False
     assert "pending" in res.error.lower()
+
+
+@pytest.mark.asyncio
+async def test_tool_registry_redacts_args_in_audit_rows(db_session, monkeypatch):
+    """Secret-looking args are redacted in every audit row the registry writes."""
+    from sqlalchemy import select
+
+    import vigilus.tools.native.search as search_mod
+    from vigilus.db.models import Action
+    from vigilus.db.seed import VIGILUS_PRINCIPAL_NAME, run_seed
+    from vigilus.search.base import SearchResult
+
+    class _FakeBackend:
+        async def search(self, query, *, max_results=5):
+            return [SearchResult(title="Doc", url="https://docs.example/x", snippet="hi")]
+
+    await run_seed(db_session)
+    principal = (
+        await db_session.execute(select(Operator).where(Operator.name == VIGILUS_PRINCIPAL_NAME))
+    ).scalar_one()
+    monkeypatch.setattr(search_mod, "build_search_backend", lambda cfg: _FakeBackend())
+
+    await ToolRegistry().execute(
+        tool_id_or_name="web_search",
+        arguments={"query": "docs", "api_token": "sk-live-hunter2"},
+        operator=principal,
+    )
+
+    rows = (
+        (await db_session.execute(select(Action).where(Action.tool_name == "web_search")))
+        .scalars()
+        .all()
+    )
+    assert {"tool_call_start", "tool_call_end"} <= {r.event for r in rows}
+    for r in rows:
+        assert "hunter2" not in str(r.args)
+        assert r.args["query"] == "docs"
+
+
+@pytest.mark.asyncio
+async def test_tool_registry_redacts_args_on_denied_row(db_session):
+    from sqlalchemy import select
+
+    from vigilus.db.models import Action
+
+    registry = ToolRegistry()
+    op = Operator(id="op3", name="op3", description="test", permission_level=PermissionLevel.read)
+    tool = Tool(id="t3", name="secret_tool", required_permission=PermissionLevel.elevate)
+    db_session.add(op)
+    db_session.add(tool)
+    await db_session.commit()
+
+    await registry.execute("secret_tool", {"password": "hunter2"}, operator=op, jit_wait_seconds=0)
+    denied = (
+        (await db_session.execute(select(Action).where(Action.event == "tool_denied")))
+        .scalars()
+        .all()
+    )
+    assert denied
+    assert all("hunter2" not in str(a.args) for a in denied)
