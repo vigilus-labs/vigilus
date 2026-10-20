@@ -13,6 +13,7 @@ from typing import Any
 import structlog
 from sqlalchemy import select
 
+from vigilus.core.audit import redact_args
 from vigilus.core.rbac import Permission, PolicyEngine
 from vigilus.core.tasks import TaskCancelled, await_cancelled
 from vigilus.db.base import get_session_factory
@@ -228,7 +229,7 @@ class ToolRegistry:
                     operator_id=operator.id,
                     tool_id=tool.id,
                     tool_name=tool.name,
-                    args=arguments,
+                    args=redact_args(arguments),
                     outcome=ActionOutcome.denied,
                     error="Permission denied by PolicyEngine.",
                     session_id=session_id,
@@ -341,7 +342,7 @@ class ToolRegistry:
                 operator_id=operator.id,
                 tool_id=tool.id,
                 tool_name=tool.name,
-                args=arguments,
+                args=redact_args(arguments),
                 outcome=ActionOutcome.pending,
                 session_id=session_id,
             )
@@ -411,7 +412,7 @@ class ToolRegistry:
                 operator_id=operator.id,
                 tool_id=tool.id,
                 tool_name=tool.name,
-                args=arguments,
+                args=redact_args(arguments),
                 outcome=ActionOutcome.error if not result_obj.success else ActionOutcome.success,
                 error=result_obj.error,
                 output=result_obj.output or None,

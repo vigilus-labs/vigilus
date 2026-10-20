@@ -220,3 +220,50 @@ async def test_change_password_invalidates_old_token(unauthenticated_client):
         "/api/auth/me", headers={"Cookie": f"vigilus_token={old_token}"}
     )
     assert r.status_code == 401
+
+
+# ── Chat routes must not be reachable without auth ────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("GET", "/sessions"),
+        ("POST", "/sessions"),
+        ("GET", "/sessions/some-id/messages"),
+        ("POST", "/sessions/some-id/messages"),
+        ("PATCH", "/sessions/some-id"),
+        ("DELETE", "/sessions/some-id"),
+        ("GET", "/sessions/some-id/stream"),
+    ],
+)
+async def test_chat_routes_not_mounted_at_root(unauthenticated_client, method, path):
+    """Only /ws is mounted outside /api; chat HTTP routes must not leak there.
+
+    The SPA static mount may answer GETs with index.html, so the check is that
+    no chat API (JSON) response comes back without auth.
+    """
+    r = await unauthenticated_client.request(method, path, json={})
+    is_json = r.headers.get("content-type", "").startswith("application/json")
+    assert not (is_json and r.status_code < 400), (method, path, r.status_code, r.text[:200])
+
+
+@pytest.mark.asyncio
+async def test_chat_routes_under_api_require_auth(unauthenticated_client):
+    r = await unauthenticated_client.get("/api/sessions")
+    assert r.status_code == 401
+
+
+def test_websocket_still_mounted_at_root():
+    """The event socket stays at /ws and closes unauthenticated clients with 4401."""
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+
+    from vigilus.main import create_app
+
+    client = TestClient(create_app())
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect("/ws") as ws:
+            ws.receive_json()
+    assert exc.value.code == 4401

@@ -275,6 +275,7 @@ def create_app() -> FastAPI:
     from vigilus.api.auth import router as auth_router
     from vigilus.api.channels import router as channels_router
     from vigilus.api.chat import router as chat_router
+    from vigilus.api.chat import ws_router as chat_ws_router
     from vigilus.api.commands import router as commands_router
     from vigilus.api.credentials import router as credentials_router
     from vigilus.api.deps import require_user
@@ -302,7 +303,7 @@ def create_app() -> FastAPI:
     app.include_router(actions_router, prefix="/api", dependencies=auth_dep)
     app.include_router(operators_router, prefix="/api", dependencies=auth_dep)
     app.include_router(chat_router, prefix="/api", dependencies=auth_dep)
-    app.include_router(chat_router)  # /ws at root — WebSocket auth handled inside the endpoint
+    app.include_router(chat_ws_router)  # /ws at root — WebSocket auth handled inside the endpoint
     app.include_router(jit_router, prefix="/api", dependencies=auth_dep)
     app.include_router(orchestrator_router, prefix="/api", dependencies=auth_dep)
     app.include_router(schedules_router, prefix="/api", dependencies=auth_dep)

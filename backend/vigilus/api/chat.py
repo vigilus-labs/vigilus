@@ -47,6 +47,10 @@ from vigilus.schemas.chat import (
 )
 
 router = APIRouter(tags=["Chat"])
+# The event socket lives on its own router: it is mounted at the root (``/ws``)
+# and authenticates inside the handler, so it must not drag the HTTP routes
+# above out from under the ``/api`` auth dependency.
+ws_router = APIRouter(tags=["Chat"])
 logger = structlog.get_logger(__name__)
 event_bus = get_event_bus()
 
@@ -54,7 +58,7 @@ event_bus = get_event_bus()
 # ── WebSocket ──────────────────────────────────────────────
 
 
-@router.websocket("/ws")
+@ws_router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     from vigilus.api.deps import bearer_token
     from vigilus.config import get_settings
