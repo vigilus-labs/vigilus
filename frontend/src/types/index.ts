@@ -175,6 +175,29 @@ export interface Action {
   created_at: string;
 }
 
+// One audited tool call behind an assistant reply. Output is not included;
+// fetch it with api.getAction(action_id).
+export interface TraceStep {
+  action_id: string;
+  event: string;
+  actor: string;
+  operator_id: string | null;
+  tool_name: string | null;
+  server_id: string | null;
+  server_name: string | null;
+  args: Record<string, unknown> | null;
+  outcome: ActionOutcome;
+  error: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface TurnTrace {
+  message_id: string;
+  steps: TraceStep[];
+  truncated: number;
+}
+
 export interface JitRequest {
   id: string;
   operator_id: string;
