@@ -409,7 +409,9 @@ _PORT_RE = re.compile(
 _MAC_RE = re.compile(r"^MAC Address:\s+(?P<mac>[0-9A-Fa-f:]{17})(?:\s+\((?P<vendor>[^)]+)\))?")
 _OS_DETAILS_RE = re.compile(r"^OS details:\s+(.+)$")
 _RUNNING_RE = re.compile(r"^Running:\s+(.+)$")
-_UP_RE = re.compile(r"^Host is\s+(up|down)")
+# "Host is up (0.0005s latency)." / "Host is up, received user-set." (--reason)
+_UP_RE = re.compile(r"^Host is\s+(?P<state>up|down)(?:,\s+received\s+(?P<reason>[^\s.,(]+))?")
+_LATENCY_RE = re.compile(r"\([\d.e+-]+s latency\)")
 
 
 def _parse_nmap_text(text: str) -> list[dict]:
@@ -438,8 +440,9 @@ def _parse_nmap_text(text: str) -> list[dict]:
             # If "name" looks like an IP itself (no parens form with hostname),
             # treat as no hostname.
             hostname = name if name and not _looks_like_ip(name) else None
-            # Verbose nmap reports down hosts as "... (ip) [host down]".
-            status = "down" if "[host down]" in line else "up"
+            # Verbose nmap reports down hosts as "... (ip) [host down]", or
+            # "[host down, received no-response]" under --reason.
+            status = "down" if "[host down" in line else "up"
             current = {
                 "ip": ip,
                 "mac": None,
@@ -457,7 +460,15 @@ def _parse_nmap_text(text: str) -> list[dict]:
 
         up = _UP_RE.match(line)
         if up:
-            current["status"] = "up" if up.group(1) == "up" else "down"
+            current["status"] = up.group("state")
+            reason = up.group("reason")
+            # With -Pn nmap assumes the host is up and never measures a round
+            # trip, so a bare "Host is up." has no latency. Record that as
+            # nmap's own "user-set" reason so _host_is_live treats it as
+            # unconfirmed (the XML parser gets this from <status reason>).
+            if current["status"] == "up" and not reason and not _LATENCY_RE.search(line):
+                reason = "user-set"
+            current["reason"] = reason
             continue
 
         if line.lstrip().startswith("PORT") and "STATE" in line:

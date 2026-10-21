@@ -362,7 +362,9 @@ class Session(Base):
     )
     actions = relationship("Action", back_populates="session")
     operator = relationship("Operator", back_populates="sessions")
-    turns = relationship("Turn", back_populates="session")
+    # turns.session_id is NOT NULL, so deleting a session must delete its turns
+    # rather than let the ORM try to null the FK.
+    turns = relationship("Turn", back_populates="session", cascade="all, delete-orphan")
 
 
 class Turn(Base):

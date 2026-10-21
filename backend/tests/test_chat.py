@@ -78,3 +78,36 @@ async def test_send_message_rejects_concurrent_turn(db_session, async_client):
         json={"content": "hello again"},
     )
     assert res.status_code != 409
+
+
+@pytest.mark.asyncio
+async def test_delete_session_with_turns_and_actions(db_session, async_client):
+    """Deleting a session removes its messages and turns and keeps the audit rows.
+
+    Turns are NOT NULL on session_id, so the ORM must delete them rather than
+    try to null the FK. Actions are audit history and survive with a NULL
+    session_id.
+    """
+    from sqlalchemy import select
+
+    from vigilus.db.models import Action, Message, MessageRole, Session, Turn, TurnStatus
+
+    session = Session(title="to delete")
+    db_session.add(session)
+    await db_session.flush()
+    db_session.add(Message(session_id=session.id, role=MessageRole.user, content="hi"))
+    db_session.add(Turn(session_id=session.id, status=TurnStatus.completed))
+    action = Action(event="tool.call", actor="test", session_id=session.id)
+    db_session.add(action)
+    await db_session.commit()
+    session_id, action_id = session.id, action.id
+
+    res = await async_client.delete(f"/api/sessions/{session_id}")
+    assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    assert await db_session.get(Session, session_id) is None
+    turns = (await db_session.execute(select(Turn).where(Turn.session_id == session_id))).all()
+    assert turns == []
+    kept = await db_session.get(Action, action_id)
+    assert kept is not None and kept.session_id is None
