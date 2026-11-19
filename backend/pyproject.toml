@@ -8,41 +8,41 @@ version = "0.3.2"
 description = "Vigilus – AI-powered infrastructure management platform"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.141",
-    "uvicorn[standard]>=0.53",
-    "sqlalchemy[asyncio]>=2.0.53",
-    "alembic>=1.20",
-    "aiosqlite>=0.22",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.54.0",
+    "sqlalchemy[asyncio]>=2.1.9",
+    "alembic>=1.20.1",
+    "aiosqlite>=0.22.1",
     "asyncpg>=0.31",
-    "pydantic>=2.13",
-    "pydantic-settings>=2.15",
-    "httpx>=0.28",
-    "paramiko>=5.0",
+    "pydantic>=2.14.4",
+    "pydantic-settings>=2.16.3",
+    "httpx>=0.28.1",
+    "paramiko>=5.1.0",
     "docker>=7.2",
-    "cryptography>=50.0",
-    "anthropic>=1.5",
-    "openai>=3.14",
-    "google-genai>=2.23",
-    "pyjwt>=2.14",
+    "cryptography>=50.0.2",
+    "anthropic>=1.17.0",
+    "openai>=3.55.1",
+    "google-genai>=2.34.0",
+    "pyjwt>=2.15.1",
     "structlog>=26.1",
-    "mcp>=2.2",
-    "apscheduler>=3.11,<4",
+    "mcp>=2.3.0",
+    "apscheduler>=3.11.3,<4",
     "argon2-cffi>=25.1",
     "defusedxml>=0.7.1",
 ]
 
 [project.optional-dependencies]
 tui = [
-    "textual>=8.2",
+    "textual>=8.2.8",
 ]
 channels = [
-    "discord.py>=2.7",
+    "discord.py>=2.7.1",
 ]
 dev = [
-    "ruff>=0.16",
-    "black>=26.5",
-    "pytest>=9.1",
-    "pytest-asyncio>=1.4",
+    "ruff>=0.17.5",
+    "black>=26.10.1",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
 ]
 
 [project.scripts]
