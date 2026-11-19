@@ -38,9 +38,9 @@ ENV VIGILUS_DATA_DIR=/app/data \
 
 EXPOSE 8000
 
-# Health check
+# Liveness check: /api/health requires authentication; OpenAPI is public.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import httpx; r = httpx.get('http://localhost:8000/api/health'); r.raise_for_status()" || exit 1
+    CMD python -c "import httpx; r = httpx.get('http://localhost:8000/openapi.json'); r.raise_for_status()" || exit 1
 
 # Run
 CMD ["vigilus", "start"]

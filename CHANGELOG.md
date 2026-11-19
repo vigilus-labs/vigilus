@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-19
+
 ### Added
 
 - Monthly LLM cost budgets: a platform-wide cap (Settings → General) plus
@@ -21,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Runtime, health/status responses, and package manifests now consistently
+  report version 0.4.0 instead of the stale runtime version 0.2.4
+- Docker liveness checks now use the existing public OpenAPI endpoint instead
+  of requesting the authenticated health endpoint without credentials
+- Force-cancelling a task interrupts hung tool calls; SSH commands enforce
+  their execution timeout and close the connection when cancelled
 - SQLite now runs in WAL mode with an explicit 5s busy timeout, so the
   scheduler, gateway, JIT polling, audit writes and chat can write
   concurrently without "database is locked" errors
@@ -36,6 +44,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   interleave and corrupt each other's history; the Telegram/Discord gateway
   likewise replies with a "still working" notice instead of starting a
   second concurrent turn in the same conversation
+
+### Changed
+
+- Updated 17 frontend direct dependencies and raised 22 backend dependency
+  minimums, preserving the existing Python requirement/locking policy
+
+### Security
+
+- Updated Vite from 8.3.0 to 8.3.8 and refreshed affected build-tool
+  dependencies, including minimatch, source-map-js, and Zod
+- Raised the PyJWT minimum to 2.15.1 and Black minimum to 26.10.1 to exclude
+  versions covered by the advisories found during dependency validation
 
 ## [0.3.2] - 2026-09-15
 
@@ -166,7 +186,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Operator delegation, MCP server manager, RBAC + JIT elevation, audit trail,
   scheduled tasks, server inventory, and multi-provider LLM support
 
-[Unreleased]: https://github.com/vigilus-labs/vigilus/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/vigilus-labs/vigilus/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/vigilus-labs/vigilus/compare/v0.3.2...v0.4.0
 [0.2.3]: https://github.com/vigilus-labs/vigilus/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/vigilus-labs/vigilus/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/vigilus-labs/vigilus/compare/v0.2.0...v0.2.1
